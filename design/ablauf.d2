@@ -1,0 +1,48 @@
+direction: down
+
+# Legende
+# I1 = a (Pflicht) · b/c · d · e · f · g
+# I2 = a (optional) · b/c · d · e · f · g   [nur Runde 1, Pfad „Ich starte"]
+# X  = IP-Verhalten (Auslöser oder Reaktion)
+
+# ─── Start ────────────────────────────────────────────────────────────────────
+
+start: "Neue Analyse" { shape: oval }
+
+sit: |md
+  **Ausgangssituation**
+  ① Zeitpunkt  ·  ② Stimmung  ·  ③ Bedürfnis  ·  ④ Kontext
+|
+
+starter: "Wer hat die Interaktion gestartet?" { shape: diamond }
+end:     "Analyse beenden"                    { shape: oval  }
+
+start -> sit -> starter
+
+# ─── Pfad A: IP startet ───────────────────────────────────────────────────────
+# Jede Runde identisch: X → I1
+
+A_X:    "X  –  Verhalten der IP"
+A_I1:   "I1\na (Pflicht) · b/c · d · e · f · g"
+A_done: "Runde abgeschlossen?" { shape: diamond }
+
+starter -> A_X:   "IP startet"
+A_X    -> A_I1  -> A_done
+A_done -> A_X:   "Nächste Runde"
+A_done -> end:   "Beenden"
+
+# ─── Pfad B: Ich starte ───────────────────────────────────────────────────────
+# Runde 1:    I2 → X   (Interpretation optional, da noch kein X voranging)
+# Runde 2–n: I1 → X   (Interpretation der vorherigen IP-Reaktion, Pflicht)
+
+B_I2:   "I2  [Runde 1]\na (optional) · b/c · d · e · f · g"
+B_I1:   "I1  [Runde 2–n]\na (Pflicht) · b/c · d · e · f · g"
+B_X:    "X  –  Reaktion der IP"
+B_done: "Runde abgeschlossen?" { shape: diamond }
+
+starter -> B_I2:  "Ich starte"
+B_I2   -> B_X
+B_I1   -> B_X
+B_X    -> B_done
+B_done -> B_I1:  "Nächste Runde"
+B_done -> end:   "Beenden"

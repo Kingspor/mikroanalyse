@@ -1,0 +1,13 @@
+# Abhängigkeiten
+node_modules/
+
+# Lokale Einstellungen (nicht ins Repo)
+.claude/
+.env
+.env.*
+
+# Build-Artefakte
+*.log
+
+# macOS
+.DS_Store

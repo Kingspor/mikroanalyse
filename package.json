@@ -1,0 +1,21 @@
+{
+  "name": "mikroanalyse",
+  "version": "1.0.0",
+  "description": "Progressive Web-App zur Mikroanalyse von Interaktionen",
+  "scripts": {
+    "build:msal": "esbuild node_modules/@azure/msal-browser/lib/msal-browser.js --bundle --format=esm --outfile=vendor/msal-browser.js",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "keywords": ["pwa", "reflection", "analysis"],
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "@azure/msal-browser": "^5.9.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
+  }
+}
