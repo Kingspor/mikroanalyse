@@ -711,6 +711,15 @@
     color: var(--ink-muted);
     cursor: default;
   }
+  .selection-bar-btn-danger {
+    color: var(--danger);
+    border-color: rgba(168, 85, 65, 0.3);
+  }
+  .selection-bar-btn-danger:disabled {
+    color: var(--ink-muted);
+    border-color: var(--line);
+    cursor: default;
+  }
 
   .fab-add {
     position: fixed;

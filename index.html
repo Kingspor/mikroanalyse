@@ -362,7 +362,7 @@ const Sync = {
       await this.msal.initialize();
     }
     this._initialized = true;
-    // Falls Redirect-Flow zurückkommt
+    // Redirect-Flow: Ergebnis nach Rückkehr von Microsoft abfangen
     try {
       const resp = await this.msal.handleRedirectPromise();
       if (resp && resp.account) {
@@ -370,7 +370,7 @@ const Sync = {
       }
     } catch (e) {
       console.warn('Redirect-Promise-Fehler', e);
-      // Stale interaction-lock bereinigen (no_token_request_cache_error lässt ihn offen)
+      // Stale interaction-lock bereinigen
       for (const key of Object.keys(sessionStorage)) {
         if (key.includes('interaction.status')) sessionStorage.removeItem(key);
       }
@@ -379,6 +379,10 @@ const Sync = {
     if (!this.account) {
       const accs = this.msal.getAllAccounts();
       if (accs.length) this.account = accs[0];
+    }
+    // Nach Logout-Redirect: kein Account mehr vorhanden → State aufräumen
+    if (!this.account) {
+      this._passphrase = null;
     }
     return true;
   },
@@ -396,8 +400,23 @@ const Sync = {
     return true;
   },
 
+  // iOS Safari blockiert Popups nach async-Awaits → Redirect-Flow verwenden
+  _useRedirect() {
+    return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  },
+
   async signIn() {
     await this._ensureReady();
+    if (this._useRedirect()) {
+      // Redirect-Flow: Seite wird zu Microsoft weitergeleitet und kehrt zurück.
+      // Das Ergebnis wird in init() via handleRedirectPromise() abgeholt.
+      await this.msal.loginRedirect({
+        scopes: ['Files.ReadWrite.AppFolder', 'User.Read'],
+        prompt: 'select_account'
+      });
+      return; // Kein return-Wert – Seite wird neu geladen
+    }
     const result = await this.msal.loginPopup({
       scopes: ['Files.ReadWrite.AppFolder', 'User.Read'],
       prompt: 'select_account'
@@ -408,6 +427,13 @@ const Sync = {
 
   async signOut() {
     if (!this.msal || !this.account) return;
+    if (this._useRedirect()) {
+      await this.msal.logoutRedirect({
+        account: this.account,
+        postLogoutRedirectUri: window.location.href
+      });
+      return;
+    }
     await this.msal.logoutPopup({ account: this.account, mainWindowRedirectUri: window.location.href });
     this.account = null;
     this._passphrase = null;
@@ -423,7 +449,11 @@ const Sync = {
       });
       return r.accessToken;
     } catch (e) {
-      // Interaktiv erneuern
+      if (this._useRedirect()) {
+        // Nach Redirect kommt man in init() zurück; aktuelle Aktion wird abgebrochen
+        await this.msal.acquireTokenRedirect({ scopes: ['Files.ReadWrite.AppFolder'] });
+        throw new Error('redirect'); // wird nie erreicht
+      }
       const r = await this.msal.acquireTokenPopup({
         scopes: ['Files.ReadWrite.AppFolder']
       });
@@ -700,6 +730,7 @@ function renderHome() {
         <span class="selection-count">${selCount === 0 ? 'Nichts gewählt' : selCount === 1 ? '1 Eintrag gewählt' : `${selCount} Einträge gewählt`}</span>
         <div class="selection-bar-actions">
           <button class="selection-bar-btn" id="btn-select-all">${selCount === list.length ? 'Alle abwählen' : 'Alle wählen'}</button>
+          <button class="selection-bar-btn selection-bar-btn-danger" id="btn-delete-sel" ${selCount === 0 ? 'disabled' : ''}>Löschen</button>
           <button class="selection-bar-btn selection-bar-btn-primary" id="btn-export-sel" ${selCount === 0 ? 'disabled' : ''}>Exportieren</button>
         </div>
       </div>
@@ -730,6 +761,10 @@ function renderHome() {
       if (selCount === list.length) State.selectedIds = [];
       else State.selectedIds = list.map(a => a.id);
       renderHome();
+    });
+    document.getElementById('btn-delete-sel').addEventListener('click', () => {
+      if (!State.selectedIds.length) return;
+      openBulkDeleteSheet(State.selectedIds.slice());
     });
     document.getElementById('btn-export-sel').addEventListener('click', () => {
       if (!State.selectedIds.length) return;
@@ -2106,6 +2141,30 @@ function openShareSheet(a) {
       goHome();
     }
   });
+}
+
+function openBulkDeleteSheet(ids) {
+  const n = ids.length;
+  const analyses = ids.map(id => Store.get(id)).filter(Boolean);
+  const content = document.getElementById('sheet-content');
+  content.innerHTML = `
+    <h3 class="sheet-title">${n} ${n === 1 ? 'Eintrag' : 'Einträge'} löschen</h3>
+    <p class="sheet-text">${analyses.map(a => escapeHtml(a.situation.title || formatDateTime(a.situation.datetime))).join('<br>')}</p>
+    <div class="sheet-actions">
+      <button class="sheet-action danger" id="btn-bulk-delete-confirm">Endgültig löschen</button>
+      <button class="sheet-action" id="btn-bulk-delete-cancel">Abbrechen</button>
+    </div>
+  `;
+  openSheet();
+  document.getElementById('btn-bulk-delete-confirm').addEventListener('click', () => {
+    closeSheet();
+    ids.forEach(id => Store.remove(id));
+    showToast(`${n} ${n === 1 ? 'Eintrag' : 'Einträge'} gelöscht`);
+    State.selectionMode = false;
+    State.selectedIds = [];
+    renderHome();
+  });
+  document.getElementById('btn-bulk-delete-cancel').addEventListener('click', closeSheet);
 }
 
 function openBulkExportSheet(analyses) {
