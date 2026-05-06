@@ -1203,9 +1203,9 @@ function roundSummaryHTML(r, i) {
 
 // ─── Runden-Schritte ────────────────────────────────────────────
 
-// Round-Schritte je nach Starter:
-//   'ip' : IP-Verhalten zuerst → reagieren a..e → eigenes Verhalten f,g
-//   'me' : eigenes Verhalten f,g zuerst → IP-Reaktion → a..e
+// Round-Schritte je nach Starter (vgl. design/ablauf.d2):
+//   'ip' : X → a · b/c · d · e · f · g
+//   'me' : a(opt) · b/c · d · e · f · g → X
 //
 // a) Interpretation: Pflicht wenn starter='ip', optional wenn starter='me'.
 function getRoundSequence(starter) {
@@ -1755,6 +1755,7 @@ function renderRoundDetailMe(r) {
   const myHas = r.myBehaviorVerbal || r.myBehaviorNonverbal || r.myBehavior;
   const ipHas = r.ipBehaviorVerbal || r.ipBehaviorNonverbal || r.ipBehavior;
   return `
+    ${roundReactionDetail(r)}
     <div class="detail-row">
       <div class="detail-row-label">f) Mein Verhalten</div>
       <div class="detail-row-value ${myHas ? '' : 'muted'}">${myHtml}</div>
@@ -1767,7 +1768,6 @@ function renderRoundDetailMe(r) {
       <div class="detail-row-label">IP-Verhalten</div>
       <div class="detail-row-value ${ipHas ? '' : 'muted'}">${ipHtml}</div>
     </div>
-    ${roundReactionDetail(r)}
   `;
 }
 
@@ -1890,6 +1890,11 @@ function openSettingsSheet() {
       `}
       <button class="sheet-action" data-act="export-json">Lokale Daten exportieren (JSON)</button>
       <button class="sheet-action" data-act="close">Schließen</button>
+    </div>
+    <div class="settings-legal-links">
+      <a href="impressum.html" target="_blank" rel="noopener">Impressum</a>
+      <span aria-hidden="true">·</span>
+      <a href="datenschutz.html" target="_blank" rel="noopener">Datenschutz</a>
     </div>
   `;
   openSheet();
@@ -2804,8 +2809,83 @@ document.addEventListener('mousedown', e => {
 });
 document.addEventListener('selectionchange', updateToolbarState);
 
+// Onboarding
+var ONBOARDING_KEY = 'mka_onboarding_done';
+var ONBOARDING_SLIDES = [
+  {
+    icon: '🔍',
+    title: 'Willkommen bei Mikroanalyse',
+    text: 'Dein persönliches Werkzeug für DBT-basierte Verhaltensanalysen — strukturiert, privat und offline-fähig.'
+  },
+  {
+    icon: '🔒',
+    title: 'Deine Daten gehören dir',
+    text: 'Alle Einträge werden ausschließlich lokal in deinem Browser gespeichert. Kein Server, kein Tracking, keine Accounts.'
+  },
+  {
+    icon: '☁️',
+    title: 'Optionaler OneDrive-Sync',
+    text: 'Du kannst deine Daten mit OneDrive synchronisieren — Ende-zu-Ende-verschlüsselt mit einer Passphrase, die nur du kennst.'
+  },
+  {
+    icon: '📝',
+    title: 'Loslegen',
+    text: 'Tippe auf „Neue Analyse“, um eine Situation zu erfassen und Schritt für Schritt zu analysieren.'
+  }
+];
+
+function showOnboarding() {
+  var idx = 0;
+  var overlay = document.createElement('div');
+  overlay.className = 'onboarding-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', 'Einführung');
+
+  function renderSlide() {
+    var slide = ONBOARDING_SLIDES[idx];
+    var isLast = idx === ONBOARDING_SLIDES.length - 1;
+    var dots = ONBOARDING_SLIDES.map(function(_, i) {
+      return '<span class="onboarding-dot' + (i === idx ? ' active' : '') + '"><\/span>';
+    }).join('');
+    overlay.innerHTML = '<div class="onboarding-slides">' +
+      '<div class="onboarding-icon">' + slide.icon + '<\/div>' +
+      '<h2 class="onboarding-title">' + escapeHtml(slide.title) + '<\/h2>' +
+      '<p class="onboarding-text">' + escapeHtml(slide.text) + '<\/p>' +
+      '<div class="onboarding-dots">' + dots + '<\/div>' +
+      '<div class="onboarding-actions">' +
+        '<button class="onboarding-btn-primary" id="ob-next">' + (isLast ? "Los geht’s" : 'Weiter') + '<\/button>' +
+        (!isLast ? '<button class="onboarding-btn-skip" id="ob-skip">Überspringen<\/button>' : '') +
+      '<\/div>' +
+    '<\/div>';
+    overlay.querySelector('#ob-next').addEventListener('click', function() {
+      if (isLast) {
+        finishOnboarding();
+      } else {
+        idx++;
+        renderSlide();
+      }
+    });
+    var skipBtn = overlay.querySelector('#ob-skip');
+    if (skipBtn) skipBtn.addEventListener('click', finishOnboarding);
+  }
+
+  function finishOnboarding() {
+    localStorage.setItem(ONBOARDING_KEY, '1');
+    document.body.removeChild(overlay);
+    render();
+  }
+
+  renderSlide();
+  document.body.appendChild(overlay);
+}
+
 // Initial-Render
-render();
+if (!localStorage.getItem(ONBOARDING_KEY)) {
+  showOnboarding();
+} else {
+  render();
+}
 
 // Sync-System initialisieren (asynchron, blockiert UI nicht)
 (async () => {
