@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#f5f1ea">
 <title>Mikroanalyse</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -88,7 +88,8 @@
   <div id="sheet-content"></div>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+<div id="sr-announcer" aria-live="polite" aria-atomic="true" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap"></div>
 
 <script>
 'use strict';
@@ -161,11 +162,13 @@ const Store = {
     if (idx >= 0) list[idx] = analysis;
     else list.unshift(analysis);
     this.saveAll(list);
+    Snapshots.push(analysis);
     autoSyncDebounced();
   },
   remove(id) {
     const list = this.loadAll().filter(a => a.id !== id);
     this.saveAll(list);
+    Snapshots.remove(id);
     const tomb = this.loadTombstones();
     tomb[id] = new Date().toISOString();
     localStorage.setItem(TOMBSTONE_KEY, JSON.stringify(tomb));
@@ -194,6 +197,43 @@ const Store = {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
   }
 };
+
+// ════════════════════════════════════════════════════════════════
+//  Snapshots: automatische Verlaufs-Sicherung
+// ════════════════════════════════════════════════════════════════
+var Snapshots = (function() {
+  var PREFIX = 'mk_snaps_';
+  var MAX = 20;
+  var MIN_MS = 5 * 60 * 1000; // 5 Minuten Mindestabstand
+
+  function _key(id) { return PREFIX + id; }
+  function _load(id) {
+    try { return JSON.parse(localStorage.getItem(_key(id)) || '[]'); }
+    catch(e) { return []; }
+  }
+  function _save(id, snaps) {
+    try { localStorage.setItem(_key(id), JSON.stringify(snaps)); }
+    catch(e) {}
+  }
+
+  return {
+    push: function(analysis, force) {
+      var snaps = _load(analysis.id);
+      var now = Date.now();
+      if (!force && snaps.length > 0 && now - snaps[snaps.length - 1].ts < MIN_MS) return;
+      snaps.push({ ts: now, data: JSON.parse(JSON.stringify(analysis)) });
+      if (snaps.length > MAX) snaps.splice(0, snaps.length - MAX);
+      _save(analysis.id, snaps);
+    },
+    list: function(id) { return _load(id); },
+    restore: function(id, ts) {
+      var snaps = _load(id);
+      var snap = snaps.find(function(s) { return s.ts === ts; });
+      return snap ? JSON.parse(JSON.stringify(snap.data)) : null;
+    },
+    remove: function(id) { localStorage.removeItem(_key(id)); }
+  };
+})();
 
 // ════════════════════════════════════════════════════════════════
 //  Crypto: PBKDF2 + AES-GCM (Web Crypto API)
@@ -667,6 +707,8 @@ function render() {
   if (State.view === 'home') renderHome();
   else if (State.view === 'wizard') renderWizard();
   else if (State.view === 'detail') renderDetail();
+  const ann = document.getElementById('sr-announcer');
+  if (ann) ann.textContent = { home: 'Startseite', wizard: 'Analyse-Wizard', detail: 'Detailansicht' }[State.view] || '';
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -849,11 +891,8 @@ function renderWizard() {
   const a = State.current;
   if (!a) return goHome();
 
-  // in einer Runde?
-  if (State.roundIdx >= 0) {
-    return renderRoundStep();
-  }
-  // sonst Situations-Schritt
+  if (State.roundIdx >= 0) return renderRoundStep();
+  if (State.step === HUB_STEP) return renderRoundsHub();
   renderSituationStep();
 }
 
@@ -1049,6 +1088,18 @@ function renderStarterStep() {
 
 // ─── Runden-Hub ─────────────────────────────────────────────────
 
+function finishEditing(a) {
+  delete a._draft;
+  Store.upsert(a);
+  showToast('Analyse gespeichert');
+  State.detailId = a.id;
+  State.view = 'detail';
+  State.current = null;
+  State.step = 0;
+  State.roundIdx = -1;
+  render();
+}
+
 function renderRoundsHub() {
   const a = State.current;
   const rounds = a.rounds;
@@ -1085,6 +1136,7 @@ function renderRoundsHub() {
     </div>
     ${bottomBarHTML([
       { id: 'btn-hub-situation', label: 'Situation', kind: 'secondary' },
+      { id: 'btn-hub-history', label: 'Verlauf', kind: 'ghost' },
       { id: 'btn-hub-finish', label: rounds.length === 0 ? 'Ohne Runden speichern' : 'Analyse beenden', kind: 'primary' }
     ])}
   `;
@@ -1123,15 +1175,9 @@ function renderRoundsHub() {
     render();
   });
 
-  document.getElementById('btn-hub-finish').addEventListener('click', () => {
-    Store.upsert(a);
-    showToast('Analyse gespeichert');
-    State.detailId = a.id;
-    State.view = 'detail';
-    State.current = null;
-    State.step = 0;
-    render();
-  });
+  document.getElementById('btn-hub-history').addEventListener('click', () => openHistorySheet(a));
+
+  document.getElementById('btn-hub-finish').addEventListener('click', () => finishEditing(a));
 }
 
 function roundSummaryHTML(r, i) {
@@ -1259,6 +1305,7 @@ function renderRoundStep() {
     <div class="content fade-in">${body}</div>
     ${bottomBarHTML([
       { id: 'btn-r-back', label: 'Zurück', kind: 'secondary' },
+      { id: 'btn-r-finish', label: 'Beenden', kind: 'ghost' },
       { id: 'btn-r-next', label: 'Weiter', kind: 'primary' }
     ])}
   `;
@@ -1277,19 +1324,17 @@ function renderRoundStep() {
     render();
   });
 
+  document.getElementById('btn-r-finish').addEventListener('click', () => {
+    saveRoundField(r, key);
+    finishEditing(a);
+  });
+
   document.getElementById('btn-r-back').addEventListener('click', () => {
     saveRoundField(r, key);
     Store.upsert(a);
     if (cur === 0) {
-      if (State.roundIdx === 0) {
-        a.rounds.splice(0, 1);
-        Store.upsert(a);
-        State.roundIdx = -1;
-        State.step = STARTER_STEP;
-      } else {
-        State.roundIdx--;
-        State.roundStep = totalRoundSteps(a.rounds[State.roundIdx]) - 1;
-      }
+      State.roundIdx = -1;
+      State.step = HUB_STEP;
     } else {
       State.roundStep--;
     }
@@ -1370,19 +1415,20 @@ function thoughtCardHTML(t, i) {
         <button class="thought-remove" data-remove-thought="${tid}" aria-label="Entfernen">×</button>
       </div>
       <div class="rich-editor" style="margin-bottom: 4px;">
-        <div class="rich-toolbar">
-          <button type="button" class="rich-btn" data-cmd="bold" title="Fett"><b>F</b></button>
-          <button type="button" class="rich-btn" data-cmd="italic" title="Kursiv"><i>K</i></button>
-          <button type="button" class="rich-btn" data-cmd="underline" title="Unterstreichen"><u>U</u></button>
-          <button type="button" class="rich-btn" data-cmd="insertUnorderedList" title="Aufzählung">•≡</button>
+        <div class="rich-toolbar" role="toolbar" aria-label="Formatierung">
+          <button type="button" class="rich-btn" data-cmd="bold" title="Fett" aria-label="Fett"><b>F</b></button>
+          <button type="button" class="rich-btn" data-cmd="italic" title="Kursiv" aria-label="Kursiv"><i>K</i></button>
+          <button type="button" class="rich-btn" data-cmd="underline" title="Unterstreichen" aria-label="Unterstreichen"><u>U</u></button>
+          <button type="button" class="rich-btn" data-cmd="insertUnorderedList" title="Aufzählung" aria-label="Aufzählung">•≡</button>
         </div>
-        <div class="rich-content thought-rich" data-t-id="${tid}" contenteditable="true" data-placeholder="Der Satz, der innerlich klingt …">${valueToEditorHTML(t.text)}</div>
+        <div class="rich-content thought-rich" data-t-id="${tid}" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Gedanke ${i + 1}" data-placeholder="Der Satz, der innerlich klingt …">${valueToEditorHTML(t.text)}</div>
       </div>
       <div class="thought-feel-label">Verknüpfte Gefühle</div>
       <div class="chips chips-compact" data-t-chips="${tid}">
-        ${FEELINGS.map(f => `
-          <button class="chip ${(t.feelings||[]).includes(f) ? 'active' : ''}" data-feel-thought="${tid}" data-feel="${escapeAttr(f)}">${escapeHtml(f)}</button>
-        `).join('')}
+        ${FEELINGS.map(f => {
+          const active = (t.feelings||[]).includes(f);
+          return `<button class="chip ${active ? 'active' : ''}" data-feel-thought="${tid}" data-feel="${escapeAttr(f)}" aria-pressed="${active}">${escapeHtml(f)}</button>`;
+        }).join('')}
       </div>
       <div class="tag-input-wrap" id="tags-${tid}">
         ${customFeelings.map(f => tagChipHTML(f, tid)).join('')}
@@ -1588,17 +1634,7 @@ function renderRoundDone() {
     State.roundStep--;
     render();
   });
-  document.getElementById('btn-rd-finish').addEventListener('click', () => {
-    delete a._draft;
-    Store.upsert(a);
-    showToast('Analyse gespeichert');
-    State.detailId = a.id;
-    State.view = 'detail';
-    State.current = null;
-    State.step = 0;
-    State.roundIdx = -1;
-    render();
-  });
+  document.getElementById('btn-rd-finish').addEventListener('click', () => finishEditing(a));
   document.getElementById('btn-rd-new').addEventListener('click', () => {
     const nextIdx = State.roundIdx + 1;
     if (nextIdx >= a.rounds.length) {
@@ -1678,6 +1714,7 @@ function renderDetail() {
   `;
 
   document.getElementById('btn-detail-edit').addEventListener('click', () => {
+    Snapshots.push(a, true); // Snapshot vor Bearbeitung erzwingen
     const copy = JSON.parse(JSON.stringify(a));
     if (!copy.defaultStarter) {
       copy.defaultStarter = (copy.rounds && copy.rounds[0] && copy.rounds[0].starter) || 'me';
@@ -2451,7 +2488,7 @@ function headerHTML(title, step, withBack) {
 
 function progressHTML(current, total) {
   const pct = Math.round((current / total) * 100);
-  return `<div class="progress"><div class="progress-fill" style="width: ${pct}%"></div></div>`;
+  return `<div class="progress" role="progressbar" aria-valuenow="${current}" aria-valuemin="1" aria-valuemax="${total}" aria-label="Schritt ${current} von ${total}"><div class="progress-fill" style="width: ${pct}%"></div></div>`;
 }
 
 function bottomBarHTML(buttons) {
@@ -2468,7 +2505,7 @@ function sliderHTML(id, value, scale) {
     <div class="slider-wrap">
       <div class="slider-value" id="${id}-display">${v}</div>
       <div class="slider-label-current" id="${id}-current">${labelForValue(v, scale)}</div>
-      <input type="range" min="0" max="100" step="1" value="${v}" id="${id}" style="--val: ${v}%">
+      <input type="range" min="0" max="100" step="1" value="${v}" id="${id}" style="--val: ${v}%" aria-label="${escapeAttr(scale[0])} bis ${escapeAttr(scale[2])}" aria-valuetext="${v} – ${labelForValue(v, scale)}">
       <div class="slider-scale">
         <span>${scale[0]}</span><span>${scale[1]}</span><span>${scale[2]}</span>
       </div>
@@ -2495,6 +2532,7 @@ function wireSlider(id) {
       const spans = el.parentElement.querySelectorAll('.slider-scale span');
       const scale = Array.from(spans).map(s => s.textContent);
       current.textContent = labelForValue(v, scale);
+      el.setAttribute('aria-valuetext', `${v} – ${labelForValue(v, scale)}`);
     }
   };
   el.addEventListener('input', update);
@@ -2512,6 +2550,43 @@ function openSheet() {
 function closeSheet() {
   document.getElementById('sheet').classList.remove('open');
   document.getElementById('sheet-backdrop').classList.remove('open');
+}
+
+function openHistorySheet(a) {
+  var snaps = Snapshots.list(a.id);
+  if (snaps.length === 0) {
+    showToast('Noch kein Verlauf verfügbar');
+    return;
+  }
+  var content = document.getElementById('sheet-content');
+  content.innerHTML = '<div class="sheet-title">Verlauf</div>' +
+    '<p style="padding:0 16px 12px;font-size:13px;color:var(--ink-muted)">Zeitpunkt antippen zum Wiederherstellen</p>' +
+    [...snaps].reverse().map(function(s) {
+      var dt = new Date(s.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      return '<button class="sheet-action" data-snap-ts="' + s.ts + '" style="flex-direction:column;align-items:flex-start;gap:2px">' +
+        '<span style="font-weight:500">' + relativeTime(s.ts) + '</span>' +
+        '<span style="font-size:11px;color:var(--ink-muted)">' + dt + ' · ' + (s.data.rounds ? s.data.rounds.length : 0) + ' Runde(n)</span>' +
+        '</button>';
+    }).join('') +
+    '<button class="sheet-action" id="btn-snap-cancel">Abbrechen</button>';
+  openSheet();
+  content.querySelectorAll('[data-snap-ts]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      closeSheet();
+      var ts = parseInt(btn.dataset.snapTs, 10);
+      var restored = Snapshots.restore(a.id, ts);
+      if (!restored) { showToast('Snapshot nicht gefunden'); return; }
+      delete restored._draft;
+      Store.upsert(restored);
+      State.current = Store.get(restored.id);
+      State.step = State.current.rounds.length > 0 ? HUB_STEP : 0;
+      State.roundIdx = -1;
+      State.roundStep = 0;
+      showToast('Auf ' + relativeTime(ts) + ' zurückgesetzt');
+      render();
+    });
+  });
+  document.getElementById('btn-snap-cancel').addEventListener('click', closeSheet);
 }
 document.getElementById('sheet-backdrop').addEventListener('click', closeSheet);
 
@@ -2600,13 +2675,13 @@ function getRichValue(id) {
 function richEditorHTML(id, value, placeholder, extraStyle) {
   const style = extraStyle ? ` style="${escapeAttr(extraStyle)}"` : '';
   return `<div class="rich-editor">
-      <div class="rich-toolbar">
-        <button type="button" class="rich-btn" data-cmd="bold" title="Fett"><b>F</b></button>
-        <button type="button" class="rich-btn" data-cmd="italic" title="Kursiv"><i>K</i></button>
-        <button type="button" class="rich-btn" data-cmd="underline" title="Unterstreichen"><u>U</u></button>
-        <button type="button" class="rich-btn" data-cmd="insertUnorderedList" title="Aufzählung">•≡</button>
+      <div class="rich-toolbar" role="toolbar" aria-label="Formatierung">
+        <button type="button" class="rich-btn" data-cmd="bold" title="Fett" aria-label="Fett"><b>F</b></button>
+        <button type="button" class="rich-btn" data-cmd="italic" title="Kursiv" aria-label="Kursiv"><i>K</i></button>
+        <button type="button" class="rich-btn" data-cmd="underline" title="Unterstreichen" aria-label="Unterstreichen"><u>U</u></button>
+        <button type="button" class="rich-btn" data-cmd="insertUnorderedList" title="Aufzählung" aria-label="Aufzählung">•≡</button>
       </div>
-      <div class="rich-content" id="${escapeAttr(id)}" contenteditable="true" data-placeholder="${escapeAttr(placeholder)}"${style}>${valueToEditorHTML(value)}</div>
+      <div class="rich-content" id="${escapeAttr(id)}" contenteditable="true" role="textbox" aria-multiline="true" aria-label="${escapeAttr(placeholder)}" data-placeholder="${escapeAttr(placeholder)}"${style}>${valueToEditorHTML(value)}</div>
     </div>`;
 }
 

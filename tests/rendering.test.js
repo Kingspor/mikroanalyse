@@ -397,12 +397,12 @@ describe('renderRoundStep - ip starter', () => {
     expect(global.State.roundStep).toBe(1);
   });
 
-  test('back button at roundStep=0 of round 0 returns to STARTER_STEP', () => {
+  test('back button at roundStep=0 of round 0 returns to HUB_STEP without deleting the round', () => {
     global.renderRoundStep();
     document.getElementById('btn-r-back').click();
     expect(global.State.roundIdx).toBe(-1);
-    expect(global.State.step).toBe(4); // STARTER_STEP
-    expect(global.State.current.rounds).toHaveLength(0);
+    expect(global.State.step).toBe(5); // HUB_STEP
+    expect(global.State.current.rounds).toHaveLength(1); // Runde bleibt erhalten
   });
 });
 

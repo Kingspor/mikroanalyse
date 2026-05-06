@@ -4,7 +4,7 @@
     --surface: #ffffff;
     --ink: #2a2622;
     --ink-soft: #5c544c;
-    --ink-muted: #948a7e;
+    --ink-muted: #7a6f64;
     --line: #e6dfd3;
     --line-soft: #efeae0;
     --accent: #6b5d4f;
@@ -1335,3 +1335,29 @@
   .field-label + .field-label,
   .field-label.mt { margin-top: 14px; }
   .text-muted-sm { font-size: 13px; color: var(--ink-muted); font-family: 'Inter Tight', sans-serif; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 400; }
+
+  /* ───── Fokus-Indikator (WCAG 2.4.7) ───── */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  button:focus { outline: none; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  textarea:focus, input:focus { outline: none; }
+  textarea:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 0;
+  }
+  .rich-editor:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 0;
+    border-color: var(--accent-soft);
+  }
+
+  /* ───── Bewegungsreduktion (WCAG 2.3.3) ───── */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
