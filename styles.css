@@ -188,6 +188,75 @@
     font-style: italic;
   }
 
+  /* ───── Rich-Text-Editor ───── */
+  .rich-editor {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--bg-elevated);
+    overflow: hidden;
+    transition: border-color 200ms, background 200ms;
+  }
+  .rich-editor:focus-within {
+    border-color: var(--accent-soft);
+    background: var(--surface);
+  }
+  .rich-toolbar {
+    display: flex;
+    gap: 2px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--bg);
+  }
+  .rich-btn {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 4px 8px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink-soft);
+    font-family: inherit;
+    font-size: 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 120ms, color 120ms;
+  }
+  .rich-btn:active,
+  .rich-btn.active {
+    background: var(--line);
+    color: var(--ink);
+  }
+  .rich-content {
+    width: 100%;
+    min-height: 140px;
+    padding: 16px 18px;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 17px;
+    line-height: 1.6;
+    outline: none;
+    word-break: break-word;
+  }
+  .rich-content:empty::before {
+    content: attr(data-placeholder);
+    color: var(--ink-muted);
+    font-style: italic;
+    pointer-events: none;
+  }
+  .rich-content ul {
+    margin: 4px 0;
+    padding-left: 22px;
+  }
+  .rich-content li {
+    margin: 2px 0;
+  }
+  .thought-rich {
+    min-height: 90px;
+  }
+
   /* ───── Slider ───── */
   .slider-wrap {
     background: var(--bg-elevated);
@@ -797,7 +866,7 @@
   }
   .round-edit-btn {
     width: 100%;
-    margin-top: 12px;
+    margin-top: 8px;
     padding: 10px;
     background: transparent;
     border: 1px solid var(--line);
@@ -806,6 +875,10 @@
     font-family: inherit;
     font-size: 13px;
     cursor: pointer;
+  }
+  .round-delete-btn {
+    color: var(--danger);
+    border-color: var(--danger);
   }
 
   /* ───── Detail-Ansicht (read-only) ───── */

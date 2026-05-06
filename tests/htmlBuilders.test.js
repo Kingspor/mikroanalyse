@@ -230,12 +230,12 @@ describe('thoughtCardHTML', () => {
     });
   });
 
-  test('includes textarea for thought text', () => {
+  test('includes rich editor for thought text', () => {
     const t = global.newThought();
     t.text = 'Mein Gedanke';
     const html = global.thoughtCardHTML(t, 0);
     expect(html).toContain('Mein Gedanke');
-    expect(html).toContain('textarea');
+    expect(html).toContain('contenteditable');
   });
 
   test('includes tag-input-wrap for custom feelings', () => {

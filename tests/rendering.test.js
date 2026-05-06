@@ -232,8 +232,8 @@ describe('renderSituationStep - step 3 (W-Fragen)', () => {
     global.State.current.situation.context = 'Legacy context';
     global.State.current.situation.contextWhat = '';
     global.renderSituationStep();
-    const textarea = document.getElementById('f-what');
-    expect(textarea.value).toBe('Legacy context');
+    const editor = document.getElementById('f-what');
+    expect(editor.innerHTML).toContain('Legacy context');
   });
 });
 
@@ -351,10 +351,10 @@ describe('renderRoundsHub', () => {
     expect(global.State.view).toBe('detail');
   });
 
-  test('back button goes to STARTER_STEP', () => {
+  test('situation button goes to step 0', () => {
     global.renderRoundsHub();
-    document.getElementById('btn-hub-back').click();
-    expect(global.State.step).toBe(4); // STARTER_STEP
+    document.getElementById('btn-hub-situation').click();
+    expect(global.State.step).toBe(0);
   });
 
   test('renders round summaries for existing rounds', () => {

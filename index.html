@@ -54,10 +54,6 @@
       // document.open() verwirft das aktuelle Dokument inkl. aller ausstehenden
       // Module-Scripts (MSAL) — das ist der einzige zuverlässige Weg, die
       // MSAL-Navigation zu stoppen. document.close() schließt den neuen Stream.
-      document.open();
-      document.close();
-      document.body.style.cssText = 'font-family:sans-serif;padding:20px;background:#f5f1ea';
-      document.body.textContent = 'Anmeldung erfolgreich – Fenster wird geschlossen…';
       window.close();
     } catch (e) { console.error('[PopupBridge] Fehler:', e); }
   })();
@@ -900,7 +896,7 @@ function renderSituationStep() {
       <div class="step-eyebrow">Ausgangssituation</div>
       <h2 class="step-question">Was war dein Bedürfnis<br>zu Beginn?</h2>
       <p class="step-hint">Was hast du gebraucht, gewünscht?</p>
-      <textarea id="f-need" placeholder="z. B. Ruhe, Anerkennung, Verbindung …">${escapeAttr(s.need)}</textarea>
+      ${richEditorHTML('f-need', s.need, 'z. B. Ruhe, Anerkennung, Verbindung …')}
     `;
   } else if (sitIdx === 3) {
     const what = s.contextWhat !== undefined && s.contextWhat !== '' ? s.contextWhat : (s.context || '');
@@ -909,7 +905,7 @@ function renderSituationStep() {
       <h2 class="step-question">Was ist unmittelbar<br>vorher passiert?</h2>
       <p class="step-hint">Alle Felder sind optional.</p>
       <label class="field-label">Was ist passiert?</label>
-      <textarea id="f-what" placeholder="Beschreibung der Situation …">${escapeAttr(what)}</textarea>
+      ${richEditorHTML('f-what', what, 'Beschreibung der Situation …')}
       <label class="field-label mt">Wer war beteiligt?</label>
       <input type="text" id="f-who" placeholder="Personen, Rollen …" value="${escapeAttr(s.contextWho || '')}">
       <label class="field-label mt">Wo war das?</label>
@@ -932,7 +928,7 @@ function renderSituationStep() {
   if (sitIdx === 1) {
     wireSlider('f-mood');
   } else {
-    const first = app.querySelector('.content textarea, .content input[type="text"], .content input[type="datetime-local"]');
+    const first = app.querySelector('.content [contenteditable], .content input[type="text"], .content input[type="datetime-local"]');
     if (first) first.focus();
   }
 
@@ -943,9 +939,9 @@ function renderSituationStep() {
       if (titleEl) s.title = titleEl.value.trim();
     }
     if (sitIdx === 1) s.mood = Math.max(0, Math.min(100, parseInt(document.getElementById('f-mood').value, 10) || 50));
-    if (sitIdx === 2) s.need = document.getElementById('f-need').value.trim();
+    if (sitIdx === 2) s.need = getRichValue('f-need');
     if (sitIdx === 3) {
-      s.contextWhat = document.getElementById('f-what').value.trim();
+      s.contextWhat = getRichValue('f-what');
       s.contextWho = document.getElementById('f-who').value.trim();
       s.contextWhere = document.getElementById('f-where').value.trim();
     }
@@ -1032,6 +1028,11 @@ function renderStarterStep() {
 
   nextBtn.addEventListener('click', () => {
     if (!a.defaultStarter) return;
+    if (a.rounds.length > 0) {
+      State.step = HUB_STEP;
+      render();
+      return;
+    }
     const r = newRound(a.defaultStarter);
     a.rounds.push(r);
     Store.upsert(a);
@@ -1083,7 +1084,7 @@ function renderRoundsHub() {
       </div>
     </div>
     ${bottomBarHTML([
-      { id: 'btn-hub-back', label: 'Zurück', kind: 'secondary' },
+      { id: 'btn-hub-situation', label: 'Situation', kind: 'secondary' },
       { id: 'btn-hub-finish', label: rounds.length === 0 ? 'Ohne Runden speichern' : 'Analyse beenden', kind: 'primary' }
     ])}
   `;
@@ -1107,8 +1108,18 @@ function renderRoundsHub() {
     });
   });
 
-  document.getElementById('btn-hub-back').addEventListener('click', () => {
-    State.step = STARTER_STEP;
+  document.querySelectorAll('[data-delete-round]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.deleteRound, 10);
+      if (!confirm(`Runde ${idx + 1} wirklich löschen?`)) return;
+      a.rounds.splice(idx, 1);
+      Store.upsert(a);
+      render();
+    });
+  });
+
+  document.getElementById('btn-hub-situation').addEventListener('click', () => {
+    State.step = 0;
     render();
   });
 
@@ -1139,6 +1150,7 @@ function roundSummaryHTML(r, i) {
       <div class="round-summary-row"><strong>IP-Verhalten</strong>${escapeHtml(ip)}</div>
       <div class="round-summary-row"><strong>Spannung</strong>${r.tension}</div>
       <button class="round-edit-btn" data-edit-round="${i}">Bearbeiten</button>
+      <button class="round-edit-btn round-delete-btn" data-delete-round="${i}">Löschen</button>
     </div>
   `;
 }
@@ -1181,9 +1193,9 @@ function renderRoundStep() {
       <h2 class="step-question">Was tut die andere Person?</h2>
       <p class="step-hint">Was wurde gesagt, was wurde körperlich gezeigt?</p>
       <label class="field-label">Verbal</label>
-      <textarea id="f-verbal" placeholder="Was wurde gesagt …">${escapeAttr(r.ipBehaviorVerbal || r.ipBehavior || '')}</textarea>
+      ${richEditorHTML('f-verbal', r.ipBehaviorVerbal || r.ipBehavior || '', 'Was wurde gesagt …')}
       <label class="field-label mt">Nonverbal</label>
-      <textarea id="f-nonverbal" placeholder="Gestik, Mimik, Körpersprache …">${escapeAttr(r.ipBehaviorNonverbal || '')}</textarea>
+      ${richEditorHTML('f-nonverbal', r.ipBehaviorNonverbal || '', 'Gestik, Mimik, Körpersprache …')}
     `;
   } else if (key === 'ipNext') {
     body = `
@@ -1191,9 +1203,9 @@ function renderRoundStep() {
       <h2 class="step-question">Wie hat die IP reagiert?</h2>
       <p class="step-hint">Was wurde gesagt, was wurde körperlich gezeigt?</p>
       <label class="field-label">Verbal</label>
-      <textarea id="f-verbal" placeholder="Was wurde gesagt …">${escapeAttr(r.ipBehaviorVerbal || r.ipBehavior || '')}</textarea>
+      ${richEditorHTML('f-verbal', r.ipBehaviorVerbal || r.ipBehavior || '', 'Was wurde gesagt …')}
       <label class="field-label mt">Nonverbal</label>
-      <textarea id="f-nonverbal" placeholder="Gestik, Mimik, Körpersprache …">${escapeAttr(r.ipBehaviorNonverbal || '')}</textarea>
+      ${richEditorHTML('f-nonverbal', r.ipBehaviorNonverbal || '', 'Gestik, Mimik, Körpersprache …')}
     `;
   } else if (key === 'interpretation') {
     const isOptional = r.starter === 'me' && State.roundIdx === 0;
@@ -1204,7 +1216,7 @@ function renderRoundStep() {
       <div class="step-eyebrow">Runde ${State.roundIdx + 1} · a) Interpretation${optLabel}</div>
       <h2 class="step-question">Wie deutest du das<br>Verhalten der IP?</h2>
       <p class="step-hint">${isOptional ? 'Du kannst dieses Feld leer lassen.' : 'Was nimmst du an, was es bedeutet?'}</p>
-      <textarea id="f-val" placeholder="Meine Interpretation …">${escapeAttr(r.interpretation)}</textarea>
+      ${richEditorHTML('f-val', r.interpretation, 'Meine Interpretation …')}
     `;
   } else if (key === 'thoughts') {
     body = renderThoughtsEditor(r);
@@ -1220,7 +1232,7 @@ function renderRoundStep() {
       <div class="step-eyebrow">Runde ${State.roundIdx + 1} · e) Bedürfnis</div>
       <h2 class="step-question">Was war dein Bedürfnis?</h2>
       <p class="step-hint">Was hättest du gebraucht?</p>
-      <textarea id="f-val" placeholder="Mein Bedürfnis …">${escapeAttr(r.need)}</textarea>
+      ${richEditorHTML('f-val', r.need, 'Mein Bedürfnis …')}
     `;
   } else if (key === 'myBehavior') {
     body = `
@@ -1228,16 +1240,16 @@ function renderRoundStep() {
       <h2 class="step-question">Was hast du getan,<br>was hast du gesagt?</h2>
       <p class="step-hint">Was habe ich gesagt, was habe ich körperlich gezeigt?</p>
       <label class="field-label">Verbal</label>
-      <textarea id="f-verbal" placeholder="Was ich gesagt habe …">${escapeAttr(r.myBehaviorVerbal || r.myBehavior || '')}</textarea>
+      ${richEditorHTML('f-verbal', r.myBehaviorVerbal || r.myBehavior || '', 'Was ich gesagt habe …')}
       <label class="field-label mt">Nonverbal</label>
-      <textarea id="f-nonverbal" placeholder="Gestik, Mimik, Körpersprache …">${escapeAttr(r.myBehaviorNonverbal || '')}</textarea>
+      ${richEditorHTML('f-nonverbal', r.myBehaviorNonverbal || '', 'Gestik, Mimik, Körpersprache …')}
     `;
   } else if (key === 'desiredEffect') {
     body = `
       <div class="step-eyebrow">Runde ${State.roundIdx + 1} · g) Wirkung</div>
       <h2 class="step-question">Welche Wirkung wolltest<br>du bei der IP erzielen?</h2>
       <p class="step-hint">Auch unbewusste Absichten zählen.</p>
-      <textarea id="f-val" placeholder="Gewünschte Wirkung …">${escapeAttr(r.desiredEffect)}</textarea>
+      ${richEditorHTML('f-val', r.desiredEffect, 'Gewünschte Wirkung …')}
     `;
   }
 
@@ -1254,7 +1266,7 @@ function renderRoundStep() {
   if (key === 'tension') wireSlider('f-val');
   if (key === 'thoughts') wireThoughtsEditor(r);
   if (key !== 'tension' && key !== 'thoughts') {
-    const first = app.querySelector('.content textarea');
+    const first = app.querySelector('.content [contenteditable]');
     if (first) first.focus();
   }
 
@@ -1291,23 +1303,23 @@ function saveRoundField(r, key) {
     return;
   }
   if (key === 'ipBehavior' || key === 'ipNext') {
-    r.ipBehaviorVerbal = (document.getElementById('f-verbal') || {value: ''}).value.trim();
-    r.ipBehaviorNonverbal = (document.getElementById('f-nonverbal') || {value: ''}).value.trim();
-    r.ipBehavior = [r.ipBehaviorVerbal, r.ipBehaviorNonverbal].filter(Boolean).join(' / ');
+    r.ipBehaviorVerbal = getRichValue('f-verbal');
+    r.ipBehaviorNonverbal = getRichValue('f-nonverbal');
+    r.ipBehavior = [r.ipBehaviorVerbal, r.ipBehaviorNonverbal].filter(Boolean).map(richHtmlToText).join(' / ');
     return;
   }
   if (key === 'myBehavior') {
-    r.myBehaviorVerbal = (document.getElementById('f-verbal') || {value: ''}).value.trim();
-    r.myBehaviorNonverbal = (document.getElementById('f-nonverbal') || {value: ''}).value.trim();
-    r.myBehavior = [r.myBehaviorVerbal, r.myBehaviorNonverbal].filter(Boolean).join(' / ');
+    r.myBehaviorVerbal = getRichValue('f-verbal');
+    r.myBehaviorNonverbal = getRichValue('f-nonverbal');
+    r.myBehavior = [r.myBehaviorVerbal, r.myBehaviorNonverbal].filter(Boolean).map(richHtmlToText).join(' / ');
     return;
   }
   const el = document.getElementById('f-val');
   if (!el) return;
   if (key === 'tension') r.tension = Math.max(0, Math.min(100, parseInt(el.value, 10) || 50));
-  else if (key === 'interpretation') r.interpretation = el.value.trim();
-  else if (key === 'need') r.need = el.value.trim();
-  else if (key === 'desiredEffect') r.desiredEffect = el.value.trim();
+  else if (key === 'interpretation') r.interpretation = getRichValue('f-val');
+  else if (key === 'need') r.need = getRichValue('f-val');
+  else if (key === 'desiredEffect') r.desiredEffect = getRichValue('f-val');
 }
 
 // ─── Gedanken-Gefühl-Editor ─────────────────────────────────────
@@ -1357,12 +1369,15 @@ function thoughtCardHTML(t, i) {
         <span class="thought-card-num">Gedanke ${i + 1}</span>
         <button class="thought-remove" data-remove-thought="${tid}" aria-label="Entfernen">×</button>
       </div>
-      <textarea
-        class="thought-text"
-        data-t-id="${tid}"
-        placeholder="Der Satz, der innerlich klingt …"
-        style="min-height: 90px;"
-      >${escapeAttr(t.text)}</textarea>
+      <div class="rich-editor" style="margin-bottom: 4px;">
+        <div class="rich-toolbar">
+          <button type="button" class="rich-btn" data-cmd="bold" title="Fett"><b>F</b></button>
+          <button type="button" class="rich-btn" data-cmd="italic" title="Kursiv"><i>K</i></button>
+          <button type="button" class="rich-btn" data-cmd="underline" title="Unterstreichen"><u>U</u></button>
+          <button type="button" class="rich-btn" data-cmd="insertUnorderedList" title="Aufzählung">•≡</button>
+        </div>
+        <div class="rich-content thought-rich" data-t-id="${tid}" contenteditable="true" data-placeholder="Der Satz, der innerlich klingt …">${valueToEditorHTML(t.text)}</div>
+      </div>
       <div class="thought-feel-label">Verknüpfte Gefühle</div>
       <div class="chips chips-compact" data-t-chips="${tid}">
         ${FEELINGS.map(f => `
@@ -1535,9 +1550,10 @@ function collectThoughtsFromDom(r) {
     const predefined = Array.from(feelEls).map(c => c.dataset.feel);
     const customChips = card.querySelectorAll(`[data-tag-feel-thought="${tid}"]`);
     const custom = Array.from(customChips).map(c => c.dataset.tagFeel).filter(Boolean);
+    const rawText = textEl ? (textEl.tagName === 'TEXTAREA' ? textEl.value.trim() : sanitizeRichText(textEl.innerHTML.trim())) : '';
     next.push({
       id: tid || ('t_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
-      text: textEl ? textEl.value.trim() : '',
+      text: rawText === '<br>' ? '' : rawText,
       feelings: [...predefined, ...custom]
     });
   });
@@ -1624,11 +1640,11 @@ function renderDetail() {
         </div>
         <div class="detail-row">
           <div class="detail-row-label">Bedürfnis zu Beginn</div>
-          <div class="detail-row-value ${a.situation.need ? '' : 'muted'}">${escapeHtml(a.situation.need || 'Nicht angegeben')}</div>
+          <div class="detail-row-value ${!isRichEmpty(a.situation.need) ? '' : 'muted'}">${renderRichField(a.situation.need) || 'Nicht angegeben'}</div>
         </div>
         <div class="detail-row">
           <div class="detail-row-label">Was vorher passiert ist</div>
-          <div class="detail-row-value ${(a.situation.contextWhat || a.situation.context) ? '' : 'muted'}">${escapeHtml(a.situation.contextWhat || a.situation.context || 'Nicht angegeben')}</div>
+          <div class="detail-row-value ${!isRichEmpty(a.situation.contextWhat || a.situation.context) ? '' : 'muted'}">${renderRichField(a.situation.contextWhat || a.situation.context) || 'Nicht angegeben'}</div>
         </div>
         ${a.situation.contextWho ? `
         <div class="detail-row">
@@ -1654,10 +1670,10 @@ function renderDetail() {
     </div>
     ${bottomBarHTML(a._draft ? [
       { id: 'btn-detail-edit', label: 'Weiter bearbeiten', kind: 'primary' },
-      { id: 'btn-detail-share', label: 'Teilen / Export', kind: 'secondary' }
+      { id: 'btn-detail-share', label: 'Optionen', kind: 'secondary' }
     ] : [
       { id: 'btn-detail-edit', label: 'Bearbeiten', kind: 'secondary' },
-      { id: 'btn-detail-share', label: 'Teilen / Export', kind: 'primary' }
+      { id: 'btn-detail-share', label: 'Optionen', kind: 'primary' }
     ])}
   `;
 
@@ -1676,7 +1692,7 @@ function renderDetail() {
       State.roundIdx = draft.roundIdx;
       State.roundStep = draft.roundStep;
     } else {
-      State.step = 0;
+      State.step = copy.rounds.length > 0 ? HUB_STEP : 0;
       State.roundIdx = -1;
       State.roundStep = 0;
     }
@@ -1689,11 +1705,11 @@ function renderDetail() {
 function behaviorDetailHTML(verbal, nonverbal, legacy) {
   if (verbal || nonverbal) {
     const parts = [];
-    if (verbal) parts.push(`<span style="color:var(--ink-muted);font-size:12px">Verbal:</span> ${escapeHtml(verbal)}`);
-    if (nonverbal) parts.push(`<span style="color:var(--ink-muted);font-size:12px">Nonverbal:</span> ${escapeHtml(nonverbal)}`);
+    if (verbal) parts.push(`<span style="color:var(--ink-muted);font-size:12px">Verbal:</span> ${renderRichField(verbal)}`);
+    if (nonverbal) parts.push(`<span style="color:var(--ink-muted);font-size:12px">Nonverbal:</span> ${renderRichField(nonverbal)}`);
     return parts.join('<br>');
   }
-  return escapeHtml(legacy || '–');
+  return renderRichField(legacy || '–');
 }
 
 function renderRoundDetailMe(r) {
@@ -1708,7 +1724,7 @@ function renderRoundDetailMe(r) {
     </div>
     <div class="detail-row">
       <div class="detail-row-label">g) Gewünschte Wirkung</div>
-      <div class="detail-row-value ${r.desiredEffect ? '' : 'muted'}">${escapeHtml(r.desiredEffect || '–')}</div>
+      <div class="detail-row-value ${!isRichEmpty(r.desiredEffect) ? '' : 'muted'}">${renderRichField(r.desiredEffect) || '–'}</div>
     </div>
     <div class="detail-row">
       <div class="detail-row-label">IP-Verhalten</div>
@@ -1735,7 +1751,7 @@ function renderRoundDetailIp(r) {
     </div>
     <div class="detail-row">
       <div class="detail-row-label">g) Gewünschte Wirkung</div>
-      <div class="detail-row-value ${r.desiredEffect ? '' : 'muted'}">${escapeHtml(r.desiredEffect || '–')}</div>
+      <div class="detail-row-value ${!isRichEmpty(r.desiredEffect) ? '' : 'muted'}">${renderRichField(r.desiredEffect) || '–'}</div>
     </div>
   `;
 }
@@ -1755,7 +1771,7 @@ function roundReactionDetail(r) {
         return `
           <div class="detail-thought">
             <div class="detail-thought-num">Gedanke ${i + 1}</div>
-            <div class="detail-thought-text ${t.text ? '' : 'muted'}">${escapeHtml(t.text || '–')}</div>
+            <div class="detail-thought-text ${!isRichEmpty(t.text) ? '' : 'muted'}">${renderRichField(t.text) || '–'}</div>
             ${allFeelings ? `<div class="detail-thought-feelings">${escapeHtml(allFeelings)}</div>` : ''}
           </div>
         `;
@@ -1774,7 +1790,7 @@ function roundReactionDetail(r) {
   return `
     <div class="detail-row">
       <div class="detail-row-label">a) Interpretation</div>
-      <div class="detail-row-value ${r.interpretation ? '' : 'muted'}">${escapeHtml(r.interpretation || '–')}</div>
+      <div class="detail-row-value ${!isRichEmpty(r.interpretation) ? '' : 'muted'}">${renderRichField(r.interpretation) || '–'}</div>
     </div>
     ${thoughtsHtml}
     ${standaloneHtml}
@@ -1784,7 +1800,7 @@ function roundReactionDetail(r) {
     </div>
     <div class="detail-row">
       <div class="detail-row-label">e) Bedürfnis</div>
-      <div class="detail-row-value ${r.need ? '' : 'muted'}">${escapeHtml(r.need || '–')}</div>
+      <div class="detail-row-value ${!isRichEmpty(r.need) ? '' : 'muted'}">${renderRichField(r.need) || '–'}</div>
     </div>
   `;
 }
@@ -2209,17 +2225,17 @@ function buildTextExport(a) {
   lines.push(`Stimmung / Stresslevel: ${a.situation.mood} / 100`);
   lines.push('');
   lines.push('Bedürfnis zu Beginn:');
-  lines.push(a.situation.need || '–');
+  lines.push(richHtmlToText(a.situation.need) || '–');
   lines.push('');
   lines.push('Was vorher passiert ist:');
-  lines.push(a.situation.contextWhat || a.situation.context || '–');
+  lines.push(richHtmlToText(a.situation.contextWhat || a.situation.context) || '–');
   if (a.situation.contextWho) { lines.push(''); lines.push('Wer war beteiligt:'); lines.push(a.situation.contextWho); }
   if (a.situation.contextWhere) { lines.push(''); lines.push('Wo war das:'); lines.push(a.situation.contextWhere); }
   lines.push('');
 
   function pushReaction(r) {
     lines.push('a) Interpretation:');
-    lines.push(r.interpretation || '–');
+    lines.push(richHtmlToText(r.interpretation) || '–');
     lines.push('');
     lines.push('b/c) Gedanken & Gefühle:');
     if (!r.thoughts || r.thoughts.length === 0) {
@@ -2227,7 +2243,7 @@ function buildTextExport(a) {
     } else {
       r.thoughts.forEach((t, ti) => {
         const feelings = (t.feelings || []).join(' · ');
-        lines.push(`  Gedanke ${ti + 1}: ${t.text || '–'}`);
+        lines.push(`  Gedanke ${ti + 1}: ${richHtmlToText(t.text) || '–'}`);
         if (feelings) lines.push(`     Gefühle: ${feelings}`);
       });
     }
@@ -2237,7 +2253,7 @@ function buildTextExport(a) {
     lines.push(`d) Spannung: ${r.tension} / 100`);
     lines.push('');
     lines.push('e) Bedürfnis:');
-    lines.push(r.need || '–');
+    lines.push(richHtmlToText(r.need) || '–');
     lines.push('');
   }
 
@@ -2249,10 +2265,10 @@ function buildTextExport(a) {
     function pushBehavior(label, verbal, nonverbal, legacy) {
       lines.push(`${label}:`);
       if (verbal || nonverbal) {
-        if (verbal) lines.push(`  Verbal: ${verbal}`);
-        if (nonverbal) lines.push(`  Nonverbal: ${nonverbal}`);
+        if (verbal) lines.push(`  Verbal: ${richHtmlToText(verbal)}`);
+        if (nonverbal) lines.push(`  Nonverbal: ${richHtmlToText(nonverbal)}`);
       } else {
-        lines.push(legacy || '–');
+        lines.push(richHtmlToText(legacy) || '–');
       }
       lines.push('');
     }
@@ -2260,7 +2276,7 @@ function buildTextExport(a) {
     if (r.starter === 'me') {
       pushBehavior('f) Mein Verhalten', r.myBehaviorVerbal, r.myBehaviorNonverbal, r.myBehavior);
       lines.push('g) Gewünschte Wirkung auf IP:');
-      lines.push(r.desiredEffect || '–');
+      lines.push(richHtmlToText(r.desiredEffect) || '–');
       lines.push('');
       pushBehavior('IP-Verhalten (Reaktion)', r.ipBehaviorVerbal, r.ipBehaviorNonverbal, r.ipBehavior);
       pushReaction(r);
@@ -2269,7 +2285,7 @@ function buildTextExport(a) {
       pushReaction(r);
       pushBehavior('f) Mein Verhalten', r.myBehaviorVerbal, r.myBehaviorNonverbal, r.myBehavior);
       lines.push('g) Gewünschte Wirkung auf IP:');
-      lines.push(r.desiredEffect || '–');
+      lines.push(richHtmlToText(r.desiredEffect) || '–');
       lines.push('');
     }
   });
@@ -2363,8 +2379,8 @@ function _buildPdf(analyses, fname) {
 
       writeHeading('Ausgangssituation', 14, 4);
       writeLabel('Stimmung / Stresslevel'); writeBody(`${a.situation.mood} / 100`);
-      writeLabel('Bedürfnis zu Beginn'); writeBody(a.situation.need);
-      writeLabel('Was vorher passiert ist'); writeBody(a.situation.contextWhat || a.situation.context);
+      writeLabel('Bedürfnis zu Beginn'); writeBody(richHtmlToText(a.situation.need));
+      writeLabel('Was vorher passiert ist'); writeBody(richHtmlToText(a.situation.contextWhat || a.situation.context));
       if (a.situation.contextWho) { writeLabel('Wer war beteiligt'); writeBody(a.situation.contextWho); }
       if (a.situation.contextWhere) { writeLabel('Wo war das'); writeBody(a.situation.contextWhere); }
 
@@ -2376,37 +2392,37 @@ function _buildPdf(analyses, fname) {
         function writeBehavior(label, verbal, nonverbal, legacy) {
           writeLabel(label);
           if (verbal || nonverbal) {
-            if (verbal) writeBody(`Verbal: ${verbal}`);
-            if (nonverbal) writeBody(`Nonverbal: ${nonverbal}`);
-          } else { writeBody(legacy); }
+            if (verbal) writeBody(`Verbal: ${richHtmlToText(verbal)}`);
+            if (nonverbal) writeBody(`Nonverbal: ${richHtmlToText(nonverbal)}`);
+          } else { writeBody(richHtmlToText(legacy)); }
         }
         function writeReaction() {
-          writeLabel('a) Interpretation'); writeBody(r.interpretation);
+          writeLabel('a) Interpretation'); writeBody(richHtmlToText(r.interpretation));
           writeLabel('b/c) Gedanken & Gefühle');
           if (!r.thoughts || r.thoughts.length === 0) {
             writeBody('–');
           } else {
             r.thoughts.forEach((t, ti) => {
               const feelings = (t.feelings || []).join(' · ');
-              writeBody(`Gedanke ${ti + 1}: ${t.text || '–'}${feelings ? '\n     Gefühle: ' + feelings : ''}`);
+              writeBody(`Gedanke ${ti + 1}: ${richHtmlToText(t.text) || '–'}${feelings ? '\n     Gefühle: ' + feelings : ''}`);
             });
           }
           const standaloneF = (r.standaloneFeelings || []).join(' · ');
           if (standaloneF) { writeLabel('Gefühle ohne Gedanken'); writeBody(standaloneF); }
           writeLabel('d) Spannung'); writeBody(`${r.tension} / 100`);
-          writeLabel('e) Bedürfnis'); writeBody(r.need);
+          writeLabel('e) Bedürfnis'); writeBody(richHtmlToText(r.need));
         }
 
         if (r.starter === 'me') {
           writeBehavior('f) Mein Verhalten', r.myBehaviorVerbal, r.myBehaviorNonverbal, r.myBehavior);
-          writeLabel('g) Gewünschte Wirkung'); writeBody(r.desiredEffect);
+          writeLabel('g) Gewünschte Wirkung'); writeBody(richHtmlToText(r.desiredEffect));
           writeBehavior('IP-Verhalten (Reaktion)', r.ipBehaviorVerbal, r.ipBehaviorNonverbal, r.ipBehavior);
           writeReaction();
         } else {
           writeBehavior('IP-Verhalten', r.ipBehaviorVerbal, r.ipBehaviorNonverbal, r.ipBehavior);
           writeReaction();
           writeBehavior('f) Mein Verhalten', r.myBehaviorVerbal, r.myBehaviorNonverbal, r.myBehavior);
-          writeLabel('g) Gewünschte Wirkung'); writeBody(r.desiredEffect);
+          writeLabel('g) Gewünschte Wirkung'); writeBody(richHtmlToText(r.desiredEffect));
         }
       });
     });
@@ -2527,6 +2543,87 @@ function escapeAttr(str) {
     .replace(/>/g, '&gt;');
 }
 
+function sanitizeRichText(html) {
+  if (!html) return '';
+  const allowed = new Set(['strong','em','u','ul','ol','li','br','p']);
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  tmp.querySelectorAll('*').forEach(el => {
+    if (!allowed.has(el.tagName.toLowerCase())) {
+      el.replaceWith(...el.childNodes);
+    } else {
+      Array.from(el.attributes).forEach(attr => el.removeAttribute(attr.name));
+    }
+  });
+  return tmp.innerHTML.trim();
+}
+
+function richHtmlToText(html) {
+  if (!html) return '';
+  const d = document.createElement('div');
+  d.innerHTML = html
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n');
+  return d.textContent.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function renderRichField(value) {
+  if (!value) return '';
+  return /<(strong|em|u|ul|ol|li|br|p)[\s>\/]/i.test(value)
+    ? sanitizeRichText(value)
+    : escapeHtml(value);
+}
+
+function isRichEmpty(html) {
+  if (!html) return true;
+  return html.replace(/<[^>]*>/g, '').trim() === '';
+}
+
+function valueToEditorHTML(value) {
+  if (!value) return '';
+  return /<(strong|em|u|ul|ol|li|br|p)[\s>\/]/i.test(value)
+    ? sanitizeRichText(value)
+    : escapeHtml(value);
+}
+
+function getRichValue(id) {
+  const el = document.getElementById(id);
+  if (!el) return '';
+  if (el.tagName === 'TEXTAREA') return el.value.trim();
+  const raw = el.innerHTML.trim();
+  if (raw === '<br>' || raw === '') return '';
+  return sanitizeRichText(raw);
+}
+
+function richEditorHTML(id, value, placeholder, extraStyle) {
+  const style = extraStyle ? ` style="${escapeAttr(extraStyle)}"` : '';
+  return `<div class="rich-editor">
+      <div class="rich-toolbar">
+        <button type="button" class="rich-btn" data-cmd="bold" title="Fett"><b>F</b></button>
+        <button type="button" class="rich-btn" data-cmd="italic" title="Kursiv"><i>K</i></button>
+        <button type="button" class="rich-btn" data-cmd="underline" title="Unterstreichen"><u>U</u></button>
+        <button type="button" class="rich-btn" data-cmd="insertUnorderedList" title="Aufzählung">•≡</button>
+      </div>
+      <div class="rich-content" id="${escapeAttr(id)}" contenteditable="true" data-placeholder="${escapeAttr(placeholder)}"${style}>${valueToEditorHTML(value)}</div>
+    </div>`;
+}
+
+function updateToolbarState() {
+  const sel = document.getSelection();
+  if (!sel || !sel.focusNode) return;
+  const editor = sel.focusNode.nodeType === 1
+    ? sel.focusNode.closest('[contenteditable]')
+    : sel.focusNode.parentElement && sel.focusNode.parentElement.closest('[contenteditable]');
+  if (!editor) return;
+  const toolbar = editor.closest('.rich-editor') && editor.closest('.rich-editor').querySelector('.rich-toolbar');
+  if (!toolbar) return;
+  toolbar.querySelectorAll('[data-cmd]').forEach(btn => {
+    try { btn.classList.toggle('active', document.queryCommandState(btn.dataset.cmd)); } catch(e) {}
+  });
+}
+
 function formatDateTime(iso) {
   if (!iso) return '–';
   try {
@@ -2595,13 +2692,11 @@ function saveCurrentStep() {
     }
     const elMood = document.getElementById('f-mood');
     if (sitIdx === 1 && elMood) s.mood = Math.max(0, Math.min(100, parseInt(elMood.value, 10) || 50));
-    const elNeed = document.getElementById('f-need');
-    if (sitIdx === 2 && elNeed) s.need = elNeed.value.trim();
+    if (sitIdx === 2) s.need = getRichValue('f-need');
     if (sitIdx === 3) {
-      const elWhat = document.getElementById('f-what');
       const elWho  = document.getElementById('f-who');
       const elWhere = document.getElementById('f-where');
-      if (elWhat)  s.contextWhat  = elWhat.value.trim();
+      s.contextWhat = getRichValue('f-what');
       if (elWho)   s.contextWho   = elWho.value.trim();
       if (elWhere) s.contextWhere = elWhere.value.trim();
     }
@@ -2623,6 +2718,16 @@ document.addEventListener('click', (e) => {
     }
   }
 });
+
+// Rich-Editor: Toolbar-Buttons delegiert
+document.addEventListener('mousedown', e => {
+  const btn = e.target.closest('.rich-btn[data-cmd]');
+  if (!btn) return;
+  e.preventDefault();
+  document.execCommand(btn.dataset.cmd, false, null);
+  updateToolbarState();
+});
+document.addEventListener('selectionchange', updateToolbarState);
 
 // Initial-Render
 render();
