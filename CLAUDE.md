@@ -10,44 +10,55 @@ npm run test:watch # Watch mode for development
 npm run build:msal # Rebuild the vendored MSAL bundle (only needed after updating @azure/msal-browser)
 ```
 
-No build step required for the app itself — serve `index.html` directly (e.g. via VS Code Live Server at `http://localhost:5500`).
+No build step required for the app itself — serve `index.html` directly (e.g. via VS Code Live Server at `http://localhost:5500`). The browser loads `src/main.js` as a native ES module.
 
 ## Architecture
 
-This is a **vanilla JS single-page PWA** — no framework, no bundler. All application code lives in one `<script>` block inside `index.html` (~2700 lines). `styles.css` holds all styling. Third-party libs are vendored in `vendor/`.
+**Vanilla JS single-page PWA** — no framework, no bundler. Application code lives in `src/` as native ES modules. `styles.css` holds all styling. Third-party libs are vendored in `vendor/`.
+
+### Module structure
+
+```
+src/
+  main.js          Entry point: wires Store._onWrite, calls initNavigation(), bootstrap
+  state.js         Single global UI state object (view, step, roundIdx, roundStep, current)
+  store.js         localStorage wrapper; tombstone-based deletion for sync
+  model.js         newAnalysis / newRound / newThought / migrateRound
+  crypto.js        PBKDF2 key derivation + AES-GCM encrypt/decrypt
+  sync.js          MSAL v5 OAuth + Microsoft Graph (OneDrive upload/download) + three-way merge
+  richtext.js      sanitizeRichText, getRichValue, richEditorHTML, richHtmlToText, renderRichField
+  ui.js            headerHTML, progressHTML, sliderHTML, openSheet/closeSheet, showToast
+  navigation.js    startNewAnalysis, openDetail, goHome, saveCurrentStep, initNavigation
+  renderer.js      render() dispatcher → renderHome / renderWizard / renderDetail
+  snapshots.js     Snapshots (localStorage history per analysis)
+  utils.js         escapeHtml, escapeAttr, formatDateTime, relativeTime
+  views/
+    home.js        renderHome, renderAnalysisCard
+    wizard.js      renderWizard and all step renderers; exports HUB_STEP, getRoundSequence, saveRoundField
+    detail.js      renderDetail, behaviorDetailHTML
+    sheets.js      All bottom-sheet UIs: settings, sync, share, bulk export/delete, history, PDF export
+```
 
 ### Data flow
 
 ```
 User input (contenteditable / form fields)
-  → persist() / saveRoundField() / collectThoughtsFromDom()
+  → saveCurrentStep() / saveRoundField() / collectThoughtsFromDom()
   → Store.upsert(analysis)       ← localStorage JSON
-  → autoSyncDebounced()          ← optional OneDrive push
+  → Store._onWrite()             ← autoSyncDebounced() injected by main.js
   → render()                     ← full DOM replacement
 ```
 
-### Key modules (all inline in index.html)
-
-| Section | Responsibility |
-|---|---|
-| `Store` | localStorage wrapper, tombstone-based deletion for sync |
-| `Crypto` | PBKDF2 key derivation + AES-GCM encrypt/decrypt |
-| `Sync` | MSAL v5 OAuth + Microsoft Graph (OneDrive upload/download) + three-way merge |
-| `State` | Single global UI state object (`view`, `step`, `roundIdx`, `roundStep`, `current`) |
-| `render()` | Dispatcher → `renderHome` / `renderWizard` / `renderDetail` |
-| `renderSituationStep()` | Wizard steps 0–3 (datetime, mood, need, context) |
-| `renderRoundStep()` | IP/my behavior, interpretation, thoughts, tension, need, desired effect |
-| `renderDetail()` | Read-only view; uses `renderRichField()` for formatted fields |
-| `buildTextExport()` / `_buildPdf()` | Export; use `richHtmlToText()` to strip formatting |
+`Store._onWrite` is a hook injected by `main.js` after all modules load. This breaks the `store ↔ sync` circular dependency without dynamic imports.
 
 ### Rich text fields
 
-Narrative `<textarea>` fields were replaced with `contenteditable` divs + a 4-button toolbar (F/K/U/•). Key functions:
+Narrative fields use `contenteditable` divs + a 4-button toolbar (F/K/U/•). All helpers live in `src/richtext.js`:
 
-- `richEditorHTML(id, value, placeholder)` — renders the toolbar + editor widget
+- `richEditorHTML(id, value, placeholder)` — renders toolbar + editor widget
 - `sanitizeRichText(html)` — allowlist sanitizer (keeps `<strong>`, `<em>`, `<u>`, `<ul>`, `<li>`, `<br>`, `<p>`)
-- `getRichValue(id)` — reads sanitized HTML from a contenteditable (falls back to `.value` for plain inputs)
-- `renderRichField(value)` — safe rendering in detail view (escapes plain text, sanitizes HTML)
+- `getRichValue(id)` — reads sanitized HTML from a contenteditable
+- `renderRichField(value)` — safe rendering in detail view
 - `richHtmlToText(html)` — strips HTML for text/PDF export
 
 Old plain-text data in localStorage renders correctly without migration.
@@ -57,7 +68,7 @@ Old plain-text data in localStorage renders correctly without migration.
 ```js
 {
   id: 'a_<timestamp>',
-  situation: { title, datetime, mood, need, context, contextWhat, contextWho, contextWhere },
+  situation: { title, datetime, mood, need, contextWhat, contextWho, contextWhere },
   rounds: [{
     id: 'r_<timestamp>',
     starter: 'me' | 'ip',
@@ -73,12 +84,12 @@ IDs are prefixed: `a_` = analysis, `r_` = round, `t_` = thought. `migrateRound()
 
 ### Testing
 
-Tests live in `tests/`. The test helper (`tests/helpers/loadApp.js`) regex-extracts the main `<script>` block from `index.html` and patches `const`/`let` to `var` to expose globals. This means:
+Tests live in `tests/`. `tests/helpers/loadApp.js` imports all `src/` modules via `require()` (esbuild transforms ESM → CJS for Jest) and exposes them as `global.*` for backward compatibility with existing test files.
 
-- All application functions are globally accessible in tests via `global.*`
-- New `const`/`let` declarations at the top level in the script block must become `var`, or use `function` declarations
-- DOM queries in tests work because jsdom is configured as the test environment
+- `package.json` stays `"type": "commonjs"` — test files are CJS; only `src/*.js` uses ESM syntax
+- `jest.esbuild.transform.cjs` handles the ESM → CJS transform using the existing `esbuild` devDep
 - `DOMParser` and `document.execCommand` are not available in jsdom — avoid calling rich-text helpers that use these in unit tests
+- New functions needed by tests must be exported from their module
 
 ### Deployment
 
