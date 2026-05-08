@@ -326,7 +326,7 @@ export function renderRoundStep() {
   if (key === 'ipBehavior') {
     body = `
       <div class="step-eyebrow">Runde ${State.roundIdx + 1} · IP-Verhalten</div>
-      <h2 class="step-question">Was tut die andere Person?</h2>
+      <h2 class="step-question">Was hat die IP getan,<br>was hat sie gesagt?</h2>
       <p class="step-hint">Was wurde gesagt, was wurde körperlich gezeigt?</p>
       <label class="field-label">Verbal</label>
       ${richEditorHTML('f-verbal', r.ipBehaviorVerbal || r.ipBehavior || '', 'Was wurde gesagt …')}
@@ -344,14 +344,15 @@ export function renderRoundStep() {
       ${richEditorHTML('f-nonverbal', r.ipBehaviorNonverbal || '', 'Gestik, Mimik, Körpersprache …')}
     `;
   } else if (key === 'interpretation') {
-    const isOptional = r.starter === 'me' && State.roundIdx === 0;
-    const optLabel   = isOptional
-      ? ` <span style="text-transform: none; letter-spacing: 0; color: var(--ink-muted); font-weight: 400;">· optional</span>`
-      : '';
+    const meStarts = r.starter === 'me';
     body = `
-      <div class="step-eyebrow">Runde ${State.roundIdx + 1} · a) Interpretation${optLabel}</div>
-      <h2 class="step-question">Wie deutest du das<br>Verhalten der IP?</h2>
-      <p class="step-hint">${isOptional ? 'Du kannst dieses Feld leer lassen.' : 'Was nimmst du an, was es bedeutet?'}</p>
+      <div class="step-eyebrow">Runde ${State.roundIdx + 1} · a) Interpretation</div>
+      <h2 class="step-question">${meStarts
+        ? 'Wie hast du die<br>Situation interpretiert?'
+        : 'Wie deutest du das<br>Verhalten der IP?'}</h2>
+      <p class="step-hint">${meStarts
+        ? 'Was hat dich zu deinem Verhalten veranlasst?'
+        : 'Was nimmst du an, was es bedeutet?'}</p>
       ${richEditorHTML('f-val', r.interpretation, 'Meine Interpretation …')}
     `;
   } else if (key === 'thoughts') {

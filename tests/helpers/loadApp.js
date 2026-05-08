@@ -145,10 +145,7 @@ function resetState() {
     });
   }
   if (global.Sync) {
-    global.Sync.account      = null;
-    global.Sync._passphrase  = null;
-    global.Sync.msal         = null;
-    global.Sync._initialized = false;
+    global.Sync._passphrase = null;
   }
 
   installMocks();

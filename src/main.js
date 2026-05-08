@@ -56,7 +56,7 @@ const ONBOARDING_KEY    = 'mka_onboarding_done';
 const ONBOARDING_SLIDES = [
   { icon: '🔍', title: 'Willkommen bei Mikroanalyse',   text: 'Dein persönliches Werkzeug für DBT-basierte Verhaltensanalysen — strukturiert, privat und offline-fähig.' },
   { icon: '🔒', title: 'Deine Daten gehören dir',       text: 'Alle Einträge werden ausschließlich lokal in deinem Browser gespeichert. Kein Server, kein Tracking, keine Accounts.' },
-  { icon: '☁️', title: 'Optionaler OneDrive-Sync',      text: 'Du kannst deine Daten mit OneDrive synchronisieren — Ende-zu-Ende-verschlüsselt mit einer Passphrase, die nur du kennst.' },
+  { icon: '☁️', title: 'Optionaler Cloud-Sync',        text: 'Du kannst deine Daten mit Microsoft OneDrive oder Google Drive synchronisieren — Ende-zu-Ende-verschlüsselt mit einer Passphrase, die nur du kennst.' },
   { icon: '📝', title: 'Loslegen',                      text: 'Tippe auf „Neue Analyse", um eine Situation zu erfassen und Schritt für Schritt zu analysieren.' }
 ];
 
@@ -112,12 +112,8 @@ if (!localStorage.getItem(ONBOARDING_KEY)) {
 
 (async () => {
   try {
-    if (window.msalReady) {
-      try { await window.msalReady; } catch (e) {}
-    }
     const ok = await Sync.init();
-    if (!ok) return;
-    if (Sync.isConnected() && State.view === 'home') render();
+    if (ok && Sync.isConnected() && State.view === 'home') render();
   } catch (e) {
     console.warn('Sync-Init fehlgeschlagen', e);
   }

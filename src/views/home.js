@@ -11,10 +11,10 @@ export function renderHome() {
 
   const settings  = Store.loadSettings();
   const synced    = Sync.isConnected();
-  const syncLabel = !Sync.hasClientId()
+  const syncLabel = !Sync.hasProvider()
     ? 'Sync nicht eingerichtet'
     : !synced
-      ? 'Mit OneDrive verbinden'
+      ? 'Anmelden bei ' + (Sync.getProviderLabel() ?? 'Cloud')
       : settings.lastSyncAt
         ? 'Synchronisiert · ' + relativeTime(settings.lastSyncAt)
         : 'Verbunden · noch nicht synchronisiert';
@@ -106,8 +106,7 @@ export function renderHome() {
   }
   document.getElementById('settings-btn').addEventListener('click', openSettingsSheet);
   document.getElementById('sync-pill').addEventListener('click', () => {
-    if (!Sync.hasClientId()) openSettingsSheet();
-    else if (!Sync.isConnected()) openSettingsSheet();
+    if (!Sync.isConnected()) openSettingsSheet();
     else triggerManualSync();
   });
 }

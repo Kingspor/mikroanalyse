@@ -13,41 +13,71 @@ import { HUB_STEP } from './wizard.js';
 // ─── Settings & Sync-UI ──────────────────────────────────────────
 
 export function openSettingsSheet() {
-  const s        = Store.loadSettings();
-  const hasClient = Sync.hasClientId();
+  const s         = Store.loadSettings();
   const connected = Sync.isConnected();
-  const account   = connected ? Sync.account.username : null;
+  const account   = connected ? Sync.getAccount() : null;
+  const provider  = Sync.getProviderLabel();
   const lastSync  = s.lastSyncAt ? formatDateTime(s.lastSyncAt) : 'Noch nie';
+  const hasProvider = Sync.hasProvider();
 
   const content = document.getElementById('sheet-content');
-  content.innerHTML = `
-    <h3 class="sheet-title">Einstellungen</h3>
-    <p class="sheet-text">Geräteübergreifend synchronisieren mit OneDrive — Ende-zu-Ende verschlüsselt.</p>
-    <div class="settings-section">
-      <div class="settings-row">
-        <div class="settings-row-label">Status</div>
-        <div class="settings-row-value">
-          ${!hasClient ? 'Sync nicht eingerichtet' : connected ? 'Verbunden mit ' + escapeHtml(account || '') : 'Nicht angemeldet'}
+
+  let statusSection = '';
+  let actionsHtml   = '';
+
+  if (!hasProvider) {
+    // Kein Anbieter gewählt — Auswahlbildschirm
+    actionsHtml = `
+      <button class="sheet-action" data-act="signin-onedrive">Mit Microsoft anmelden</button>
+      <button class="sheet-action" data-act="signin-google">Mit Google anmelden</button>
+    `;
+  } else if (!connected) {
+    // Anbieter bekannt, aber nicht eingeloggt
+    statusSection = `
+      <div class="settings-section">
+        <div class="settings-row">
+          <div class="settings-row-label">Anbieter</div>
+          <div class="settings-row-value">${escapeHtml(provider || '')}</div>
         </div>
-      </div>
-      ${connected ? `
+        <div class="settings-row">
+          <div class="settings-row-label">Status</div>
+          <div class="settings-row-value">Nicht angemeldet</div>
+        </div>
+      </div>`;
+    actionsHtml = `
+      <button class="sheet-action" data-act="signin-current">Erneut anmelden</button>
+      <button class="sheet-action" data-act="switch-provider">Anderen Anbieter wählen</button>
+    `;
+  } else {
+    // Verbunden
+    statusSection = `
+      <div class="settings-section">
+        <div class="settings-row">
+          <div class="settings-row-label">Status</div>
+          <div class="settings-row-value">Verbunden · ${escapeHtml(provider || '')}</div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Konto</div>
+          <div class="settings-row-value">${escapeHtml(account?.email || account?.name || '')}</div>
+        </div>
         <div class="settings-row">
           <div class="settings-row-label">Letzte Synchronisation</div>
           <div class="settings-row-value">${escapeHtml(lastSync)}</div>
         </div>
-      ` : ''}
-    </div>
+      </div>`;
+    actionsHtml = `
+      <button class="sheet-action" data-act="sync-now">Jetzt synchronisieren</button>
+      <button class="sheet-action" data-act="change-passphrase">Passphrase eingeben / ändern</button>
+      <button class="sheet-action" data-act="signout">Abmelden</button>
+    `;
+  }
+
+  content.innerHTML = `
+    <h3 class="sheet-title">Einstellungen</h3>
+    <p class="sheet-text">Geräteübergreifend synchronisieren — Ende-zu-Ende verschlüsselt.</p>
+    ${statusSection}
     <div class="sheet-actions">
-      ${!hasClient ? `
-        <button class="sheet-action" data-act="setup-client">App-Setup starten</button>
-      ` : !connected ? `
-        <button class="sheet-action" data-act="signin">Mit OneDrive verbinden</button>
-        <button class="sheet-action" data-act="setup-client">Client-ID ändern</button>
-      ` : `
-        <button class="sheet-action" data-act="sync-now">Jetzt synchronisieren</button>
-        <button class="sheet-action" data-act="change-passphrase">Passphrase eingeben / ändern</button>
-        <button class="sheet-action" data-act="signout">Abmelden</button>
-      `}
+      ${actionsHtml}
       <button class="sheet-action" data-act="export-json">Lokale Daten exportieren (JSON)</button>
       <button class="sheet-action" data-act="close">Schließen</button>
     </div>
@@ -59,27 +89,35 @@ export function openSettingsSheet() {
   `;
   openSheet();
 
+  async function doSignIn(providerId) {
+    closeSheet();
+    try {
+      showToast('Anmelden …');
+      await Sync.signIn(providerId);
+      await ensurePassphraseThenSync();
+    } catch (e) {
+      console.error(e);
+      const msg = (e && e.message) ? e.message : String(e);
+      if (msg.length > 60) alert('Anmeldung fehlgeschlagen:\n\n' + msg);
+      else showToast('Anmeldung fehlgeschlagen: ' + msg);
+    }
+  }
+
   const handlers = {
-    'setup-client': () => { closeSheet(); openClientIdSetup(); },
-    'signin': async () => {
-      closeSheet();
-      try {
-        showToast('Anmelden …');
-        await Sync.signIn();
-        await ensurePassphraseThenSync();
-      } catch (e) {
-        console.error(e);
-        const msg = (e && e.message) ? e.message : String(e);
-        if (msg.length > 60) alert('Anmeldung fehlgeschlagen:\n\n' + msg);
-        else showToast('Anmeldung fehlgeschlagen: ' + msg);
-      }
+    'signin-onedrive':  () => doSignIn('onedrive'),
+    'signin-google':    () => doSignIn('googledrive'),
+    'signin-current':   () => doSignIn(null),
+    'switch-provider': async () => {
+      await Sync.signOut();
+      render();
+      setTimeout(openSettingsSheet, 50);
     },
     'sync-now':          async () => { closeSheet(); await triggerManualSync(); },
     'change-passphrase': () => { closeSheet(); openPassphrasePrompt({ change: true }); },
     'signout': async () => {
       if (!confirm('Wirklich abmelden? Lokale Daten bleiben erhalten.')) return;
       closeSheet();
-      try { await Sync.signOut(); } catch (e) {}
+      await Sync.signOut();
       render();
     },
     'export-json': () => { closeSheet(); exportLocalJson(); },
@@ -91,78 +129,6 @@ export function openSettingsSheet() {
   });
 }
 
-export function openClientIdSetup() {
-  const s       = Store.loadSettings();
-  const content = document.getElementById('sheet-content');
-  content.innerHTML = `
-    <h3 class="sheet-title">App-Setup</h3>
-    <p class="sheet-text">
-      Damit die App auf dein OneDrive zugreifen kann, brauchst du eine Microsoft-App-Registrierung
-      (einmaliger Schritt, ~10 Min).
-    </p>
-    <div class="setup-steps">
-      <div class="setup-step">
-        <div class="setup-num">1</div>
-        <div class="setup-text">
-          Öffne <a href="https://entra.microsoft.com" target="_blank" rel="noopener">entra.microsoft.com</a>
-          und melde dich mit deinem Microsoft-Konto an.
-        </div>
-      </div>
-      <div class="setup-step">
-        <div class="setup-num">2</div>
-        <div class="setup-text">
-          Gehe zu <strong>Anwendungen → App-Registrierungen → Neue Registrierung</strong>.
-          Name: „Mikroanalyse". Konto-Typ: <strong>„Persönliche Microsoft-Konten"</strong>.
-          Redirect-URI (Single-Page-App): <code>${escapeHtml(window.location.origin + window.location.pathname)}</code>
-        </div>
-      </div>
-      <div class="setup-step">
-        <div class="setup-num">3</div>
-        <div class="setup-text">
-          Unter <strong>API-Berechtigungen</strong> hinzufügen: <code>Files.ReadWrite.AppFolder</code> (Microsoft Graph, delegiert).
-        </div>
-      </div>
-      <div class="setup-step">
-        <div class="setup-num">4</div>
-        <div class="setup-text">
-          Kopiere die <strong>Anwendungs-ID (Client-ID)</strong> aus der Übersicht und füge sie unten ein.
-        </div>
-      </div>
-    </div>
-    <label class="field-label" style="margin-top: 18px;">Client-ID</label>
-    <input type="text" id="setup-clientid" placeholder="z. B. 12345678-abcd-…" value="${escapeAttr(s.clientId || '')}" autocomplete="off" autocapitalize="off" spellcheck="false">
-    <div class="sheet-actions" style="margin-top: 18px;">
-      <button class="sheet-action" data-act="save">Speichern und verbinden</button>
-      <button class="sheet-action" data-act="cancel">Abbrechen</button>
-    </div>
-  `;
-  openSheet();
-
-  content.querySelector('[data-act="save"]').addEventListener('click', async () => {
-    const v = document.getElementById('setup-clientid').value.trim();
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) {
-      showToast('Client-ID muss eine UUID sein (z. B. 12345678-abcd-…)');
-      return;
-    }
-    const settings = Store.loadSettings();
-    settings.clientId = v;
-    Store.saveSettings(settings);
-    closeSheet();
-    showToast('Gespeichert');
-    Sync.msal         = null;
-    Sync.account      = null;
-    Sync._initialized = false;
-    try { await Sync.init(); }
-    catch (e) {
-      console.error('Init nach Setup fehlgeschlagen', e);
-      alert('Initialisierung fehlgeschlagen:\n\n' + (e.message || e));
-      return;
-    }
-    setTimeout(() => openSettingsSheet(), 300);
-  });
-  content.querySelector('[data-act="cancel"]').addEventListener('click', closeSheet);
-}
-
 export function openPassphrasePrompt(opts = {}) {
   const { change = false, onSuccess = null, message = null } = opts;
   const content = document.getElementById('sheet-content');
@@ -170,8 +136,8 @@ export function openPassphrasePrompt(opts = {}) {
     <h3 class="sheet-title">${change ? 'Passphrase eingeben' : 'Verschlüsselungs-Passphrase'}</h3>
     <p class="sheet-text">
       ${message ? escapeHtml(message) : (change
-        ? 'Gib die Passphrase ein, mit der deine OneDrive-Daten verschlüsselt sind.'
-        : 'Wähle eine Passphrase. Sie verschlüsselt alle Daten lokal vor dem Hochladen — Microsoft kann nichts lesen. Wenn du sie verlierst, sind die Cloud-Daten unwiederbringlich verloren.')}
+        ? 'Gib die Passphrase ein, mit der deine Cloud-Daten verschlüsselt sind.'
+        : 'Wähle eine Passphrase. Sie verschlüsselt alle Daten lokal vor dem Hochladen — der Cloud-Anbieter kann nichts lesen. Wenn du sie verlierst, sind die Cloud-Daten unwiederbringlich verloren.')}
     </p>
     <input type="password" id="pass-input" placeholder="Passphrase" autocomplete="new-password" autocapitalize="off" spellcheck="false" style="margin-bottom: 12px;">
     ${!change ? `
@@ -207,7 +173,7 @@ export async function ensurePassphraseThenSync() {
     openPassphrasePrompt({
       change: remoteExists,
       message: remoteExists
-        ? 'Auf OneDrive liegen verschlüsselte Daten. Gib deine Passphrase ein, um sie zu entschlüsseln.'
+        ? 'In der Cloud liegen verschlüsselte Daten. Gib deine Passphrase ein, um sie zu entschlüsseln.'
         : null,
       onSuccess: doInitialSync
     });

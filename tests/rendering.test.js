@@ -386,9 +386,9 @@ describe('renderRoundStep - ip starter', () => {
     expect(document.getElementById('f-nonverbal')).not.toBeNull();
   });
 
-  test('step 0 shows "Was tut die andere Person?" question', () => {
+  test('step 0 shows IP-Verhalten question', () => {
     global.renderRoundStep();
-    expect(document.getElementById('app').innerHTML).toContain('Was tut die andere Person?');
+    expect(document.getElementById('app').innerHTML).toContain('Was hat die IP getan');
   });
 
   test('next button advances roundStep from 0 to 1', () => {
@@ -425,10 +425,10 @@ describe('renderRoundStep - me starter', () => {
     expect(document.getElementById('f-val')).not.toBeNull();
   });
 
-  test('step 0 shows interpretation question with optional label for round 1', () => {
+  test('step 0 shows interpretation question for me-starter', () => {
     global.renderRoundStep();
     expect(document.getElementById('app').innerHTML).toContain('Interpretation');
-    expect(document.getElementById('app').innerHTML).toContain('optional');
+    expect(document.getElementById('app').innerHTML).toContain('Situation interpretiert');
   });
 
   test('step 4 (myBehavior) renders verbal and nonverbal textareas', () => {
