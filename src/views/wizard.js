@@ -1,7 +1,7 @@
 import { State } from '../state.js';
 import { Store } from '../store.js';
-import { FEELINGS, CustomFeelings } from '../store.js';
-import { newRound, newThought, migrateRound } from '../model.js';
+import { FEELINGS, CustomFeelings, People, Places } from '../store.js';
+import { newRound, newThought, migrateRound, asNameList } from '../model.js';
 import { richEditorHTML, getRichValue, sanitizeRichText, richHtmlToText, valueToEditorHTML } from '../richtext.js';
 import { headerHTML, progressHTML, bottomBarHTML, sliderHTML, wireSlider, showToast } from '../ui.js';
 import { escapeHtml, escapeAttr } from '../utils.js';
@@ -19,6 +19,90 @@ export function renderWizard() {
   if (State.roundIdx >= 0) return renderRoundStep();
   if (State.step === HUB_STEP) return renderRoundsHub();
   renderSituationStep();
+}
+
+// ─── Namenslisten (Personen/Orte) ────────────────────────────────
+
+export function nameListEditorHTML(scope, predefined, selected, placeholder) {
+  const sel    = new Set(selected);
+  const known  = new Set(predefined);
+  const custom = selected.filter(x => !known.has(x));
+  return `
+    <div class="chips chips-compact" data-namelist-scope="${escapeAttr(scope)}">
+      ${predefined.map(name => {
+        const active = sel.has(name);
+        return `<button type="button" class="chip ${active ? 'active' : ''}" data-namelist-pick="${escapeAttr(name)}" aria-pressed="${active}">${escapeHtml(name)}</button>`;
+      }).join('')}
+    </div>
+    <div class="tag-input-wrap" data-namelist-tags="${escapeAttr(scope)}">
+      ${custom.map(name => nameListCustomChipHTML(scope, name)).join('')}
+      <input type="text" class="tag-input-field" data-namelist-input="${escapeAttr(scope)}" placeholder="${escapeAttr(placeholder)}">
+    </div>
+  `;
+}
+
+function nameListCustomChipHTML(scope, name) {
+  return `<span class="tag-chip" data-namelist-custom="${escapeAttr(scope)}" data-namelist-name="${escapeAttr(name)}">
+    <span class="tag-chip-name">${escapeHtml(name)}</span>
+    <button type="button" class="tag-remove" aria-label="Löschen">🗑</button>
+  </span>`;
+}
+
+export function readNameList(scope) {
+  const fromChips = Array.from(document.querySelectorAll(`[data-namelist-scope="${scope}"] .chip.active`))
+    .map(c => c.dataset.namelistPick);
+  const fromCustom = Array.from(document.querySelectorAll(`[data-namelist-tags="${scope}"] .tag-chip[data-namelist-custom="${scope}"]`))
+    .map(c => c.dataset.namelistName);
+  return [...fromChips, ...fromCustom];
+}
+
+export function wireNameListEditor(scope, store) {
+  document.querySelectorAll(`[data-namelist-scope="${scope}"] [data-namelist-pick]`).forEach(c => {
+    c.addEventListener('click', () => {
+      const next = !c.classList.contains('active');
+      c.classList.toggle('active', next);
+      c.setAttribute('aria-pressed', next ? 'true' : 'false');
+    });
+  });
+  const wrap  = document.querySelector(`[data-namelist-tags="${scope}"]`);
+  const input = document.querySelector(`[data-namelist-input="${scope}"]`);
+  if (!wrap || !input) return;
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const label = input.value.trim();
+      if (!label) return;
+      input.value = '';
+      const chipsContainer = document.querySelector(`[data-namelist-scope="${scope}"]`);
+      const existing = chipsContainer.querySelector(`[data-namelist-pick="${CSS.escape(label)}"]`);
+      if (existing) {
+        existing.classList.add('active');
+        existing.setAttribute('aria-pressed', 'true');
+        return;
+      }
+      store.add(label);
+      const newChip = document.createElement('button');
+      newChip.type = 'button';
+      newChip.className = 'chip active';
+      newChip.dataset.namelistPick = label;
+      newChip.setAttribute('aria-pressed', 'true');
+      newChip.textContent = label;
+      newChip.addEventListener('click', () => {
+        const next = !newChip.classList.contains('active');
+        newChip.classList.toggle('active', next);
+        newChip.setAttribute('aria-pressed', next ? 'true' : 'false');
+      });
+      chipsContainer.appendChild(newChip);
+    } else if (e.key === 'Backspace' && input.value === '') {
+      const customChips = wrap.querySelectorAll('.tag-chip');
+      if (customChips.length) customChips[customChips.length - 1].remove();
+    }
+  });
+
+  wrap.querySelectorAll('.tag-chip[data-namelist-custom] .tag-remove').forEach(btn => {
+    btn.addEventListener('click', () => btn.closest('.tag-chip').remove());
+  });
 }
 
 // ─── Situations-Schritte ─────────────────────────────────────────
@@ -60,6 +144,8 @@ export function renderSituationStep() {
     `;
   } else if (sitIdx === 3) {
     const what = s.contextWhat !== undefined && s.contextWhat !== '' ? s.contextWhat : (s.context || '');
+    const whoSelected   = asNameList(s.contextWho);
+    const whereSelected = asNameList(s.contextWhere);
     body = `
       <div class="step-eyebrow">Ausgangssituation</div>
       <h2 class="step-question">Was ist unmittelbar<br>vorher passiert?</h2>
@@ -67,9 +153,9 @@ export function renderSituationStep() {
       <label class="field-label">Was ist passiert?</label>
       ${richEditorHTML('f-what', what, 'Beschreibung der Situation …')}
       <label class="field-label mt">Wer war beteiligt?</label>
-      <input type="text" id="f-who" placeholder="Personen, Rollen …" value="${escapeAttr(s.contextWho || '')}">
+      ${nameListEditorHTML('who', People.get(), whoSelected, 'Person/Rolle + Enter')}
       <label class="field-label mt">Wo war das?</label>
-      <input type="text" id="f-where" placeholder="Ort, Kontext …" value="${escapeAttr(s.contextWhere || '')}">
+      ${nameListEditorHTML('where', Places.get(), whereSelected, 'Ort/Kontext + Enter')}
     `;
   }
 
@@ -93,6 +179,11 @@ export function renderSituationStep() {
     if (first) first.focus();
   }
 
+  if (sitIdx === 3) {
+    wireNameListEditor('who',   People);
+    wireNameListEditor('where', Places);
+  }
+
   function persist() {
     if (sitIdx === 0) {
       s.datetime = document.getElementById('f-datetime').value || s.datetime;
@@ -103,8 +194,8 @@ export function renderSituationStep() {
     if (sitIdx === 2) s.need = getRichValue('f-need');
     if (sitIdx === 3) {
       s.contextWhat  = getRichValue('f-what');
-      s.contextWho   = document.getElementById('f-who').value.trim();
-      s.contextWhere = document.getElementById('f-where').value.trim();
+      s.contextWho   = readNameList('who');
+      s.contextWhere = readNameList('where');
     }
     Store.upsert(a);
   }
@@ -207,7 +298,7 @@ export function finishEditing(a) {
 export function renderRoundsHub() {
   const a      = State.current;
   const rounds = a.rounds;
-  const def    = a.defaultStarter;
+  const effectiveStarter = (rounds[0] && rounds[0].starter) || a.defaultStarter || 'me';
   const app    = document.getElementById('app');
 
   app.innerHTML = `
@@ -217,22 +308,15 @@ export function renderRoundsHub() {
       <div class="step-eyebrow">Interaktion</div>
       <h2 class="step-question">${rounds.length === 0 ? 'Erste Runde anlegen' : 'Eine weitere Runde?'}</h2>
       <p class="step-hint">${rounds.length === 0
-        ? 'Standardmäßig ' + (def === 'me' ? 'startest du.' : 'startet die IP.') + ' Du kannst pro Runde wechseln.'
+        ? (effectiveStarter === 'me' ? 'Du startest die Interaktion.' : 'Die IP startet die Interaktion.')
         : 'Du kannst weitere Runden hinzufügen oder die Analyse beenden.'}</p>
       ${rounds.map((r, i) => roundSummaryHTML(r, i)).join('')}
       <div class="choice-stack" style="margin-top: ${rounds.length ? '20px' : '8px'};">
-        <button class="choice-card ${def === 'me' ? 'choice-active' : ''}" data-starter="me">
-          <div class="choice-icon">A</div>
+        <button class="choice-card" data-add-round>
+          <div class="choice-icon">+</div>
           <div class="choice-text">
-            <div class="choice-title">Ich starte diese Runde</div>
-            <div class="choice-sub">Mein Verhalten zuerst${def === 'me' ? ' · Standard' : ''}</div>
-          </div>
-        </button>
-        <button class="choice-card ${def === 'ip' ? 'choice-active' : ''}" data-starter="ip">
-          <div class="choice-icon">B</div>
-          <div class="choice-text">
-            <div class="choice-title">IP startet diese Runde</div>
-            <div class="choice-sub">IP-Verhalten zuerst${def === 'ip' ? ' · Standard' : ''}</div>
+            <div class="choice-title">Runde hinzufügen</div>
+            <div class="choice-sub">${effectiveStarter === 'me' ? 'Mein Verhalten zuerst' : 'IP-Verhalten zuerst'}</div>
           </div>
         </button>
       </div>
@@ -244,16 +328,17 @@ export function renderRoundsHub() {
     ])}
   `;
 
-  document.querySelectorAll('[data-starter]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const r = newRound(btn.dataset.starter);
+  const addBtn = document.querySelector('[data-add-round]');
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      const r = newRound(effectiveStarter);
       a.rounds.push(r);
       Store.upsert(a);
       State.roundIdx  = a.rounds.length - 1;
       State.roundStep = 0;
       render();
     });
-  });
+  }
   document.querySelectorAll('[data-edit-round]').forEach(btn => {
     btn.addEventListener('click', () => {
       State.roundIdx  = parseInt(btn.dataset.editRound, 10);
@@ -276,7 +361,7 @@ export function renderRoundsHub() {
 }
 
 export function roundSummaryHTML(r, i) {
-  const starterLabel = r.starter === 'me' ? 'Ich startete' : 'IP startete';
+  const starterLabel = i === 0 ? (r.starter === 'me' ? 'Ich startete' : 'IP startete') : '';
   const myRaw = r.myBehaviorVerbal || r.myBehavior || '';
   const ipRaw = r.ipBehaviorVerbal || r.ipBehavior || '';
   const my = myRaw ? myRaw.slice(0, 80) : '–';
@@ -285,7 +370,7 @@ export function roundSummaryHTML(r, i) {
     <div class="round-summary">
       <div class="round-summary-head">
         <div class="round-summary-title">Runde ${i + 1}</div>
-        <div class="round-summary-badge">${starterLabel}</div>
+        ${starterLabel ? `<div class="round-summary-badge">${starterLabel}</div>` : ''}
       </div>
       <div class="round-summary-row"><strong>Mein Verhalten</strong>${escapeHtml(my)}</div>
       <div class="round-summary-row"><strong>IP-Verhalten</strong>${escapeHtml(ip)}</div>
@@ -451,15 +536,34 @@ export function saveRoundField(r, key) {
 
 // ─── Gedanken-Gefühl-Editor ──────────────────────────────────────
 
+function customFeelingsForRound(r) {
+  const set = new Set(CustomFeelings.get());
+  (r.thoughts || []).forEach(t => (t.feelings || []).forEach(f => { if (!FEELINGS.includes(f)) set.add(f); }));
+  (r.standaloneFeelings || []).forEach(f => { if (!FEELINGS.includes(f)) set.add(f); });
+  return [...set];
+}
+
+export function managedFeelChipHTML(scope, name, active) {
+  const fa = escapeAttr(name);
+  const ds = scope === 'standalone'
+    ? `data-standalone-feel="${fa}"`
+    : `data-feel-thought="${escapeAttr(scope)}" data-feel="${fa}"`;
+  return `<span class="chip chip-managed ${active ? 'active' : ''}" ${ds} role="button" tabindex="0" aria-pressed="${active}">
+    <span class="chip-managed-name">${escapeHtml(name)}</span>
+    <button type="button" class="chip-managed-action chip-managed-edit"   aria-label="Umbenennen">✎</button>
+    <button type="button" class="chip-managed-action chip-managed-remove" aria-label="Löschen">🗑</button>
+  </span>`;
+}
+
 export function renderThoughtsEditor(r) {
-  const items           = r.thoughts && r.thoughts.length ? r.thoughts : [];
-  const standaloneCustom = (r.standaloneFeelings || []).filter(f => !FEELINGS.includes(f));
+  const items   = r.thoughts && r.thoughts.length ? r.thoughts : [];
+  const customs = customFeelingsForRound(r);
   return `
     <div class="step-eyebrow">Runde ${State.roundIdx + 1} · b/c) Gedanken &amp; Gefühle</div>
     <h2 class="step-question">Welche Gedanken<br>kommen — mit welchen Gefühlen?</h2>
     <p class="step-hint">Du kannst mehrere Gedanken erfassen. Pro Gedanke wählst du die zugehörigen Gefühle.</p>
     <div id="thoughts-list" class="stack" style="gap: 14px; margin-bottom: 18px;">
-      ${items.map((t, i) => thoughtCardHTML(t, i)).join('')}
+      ${items.map((t, i) => thoughtCardHTML(t, i, customs)).join('')}
     </div>
     <button class="choice-card" id="add-thought" style="justify-content: center; padding: 16px 20px;">
       <div class="choice-icon">+</div>
@@ -475,18 +579,22 @@ export function renderThoughtsEditor(r) {
         ${FEELINGS.map(f => `
           <button class="chip ${(r.standaloneFeelings||[]).includes(f) ? 'active' : ''}" data-standalone-feel="${escapeAttr(f)}">${escapeHtml(f)}</button>
         `).join('')}
+        ${customs.map(f => managedFeelChipHTML('standalone', f, (r.standaloneFeelings||[]).includes(f))).join('')}
       </div>
       <div class="tag-input-wrap" id="standalone-tags">
-        ${standaloneCustom.map(f => tagChipHTML(f, null)).join('')}
         <input type="text" class="tag-input-field" id="standalone-tag-input" placeholder="Eigenes Gefühl + Enter">
       </div>
     </div>
   `;
 }
 
-export function thoughtCardHTML(t, i) {
-  const tid           = escapeAttr(t.id);
-  const customFeelings = (t.feelings || []).filter(f => !FEELINGS.includes(f));
+export function thoughtCardHTML(t, i, customsList) {
+  const tid     = escapeAttr(t.id);
+  const customs = customsList || (() => {
+    const s = new Set(CustomFeelings.get());
+    (t.feelings || []).forEach(f => { if (!FEELINGS.includes(f)) s.add(f); });
+    return [...s];
+  })();
   return `
     <div class="thought-card" data-thought-id="${tid}" data-thought-idx="${i}">
       <div class="thought-card-head">
@@ -508,9 +616,9 @@ export function thoughtCardHTML(t, i) {
           const active = (t.feelings||[]).includes(f);
           return `<button class="chip ${active ? 'active' : ''}" data-feel-thought="${tid}" data-feel="${escapeAttr(f)}" aria-pressed="${active}">${escapeHtml(f)}</button>`;
         }).join('')}
+        ${customs.map(f => managedFeelChipHTML(t.id, f, (t.feelings||[]).includes(f))).join('')}
       </div>
       <div class="tag-input-wrap" id="tags-${tid}">
-        ${customFeelings.map(f => tagChipHTML(f, tid)).join('')}
         <input type="text" class="tag-input-field" data-t-tag-id="${tid}" placeholder="Eigenes Gefühl + Enter">
       </div>
     </div>
@@ -594,22 +702,39 @@ export function wireThoughtsEditor(r) {
   wireStandaloneFeelings(r);
 }
 
+function appendManagedChipToRow(chipRow, scope, label) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = managedFeelChipHTML(scope, label, true);
+  const chip = tmp.firstElementChild;
+  chipRow.appendChild(chip);
+  chip.addEventListener('click', e => {
+    if (e.target.closest('.chip-managed-action')) return;
+    chip.classList.toggle('active');
+  });
+  return chip;
+}
+
 export function wireTagInputs(r) {
   document.querySelectorAll('.tag-input-field[data-t-tag-id]').forEach(input => {
     const tid  = input.dataset.tTagId;
-    const wrap = input.closest('.tag-input-wrap');
+    const card = input.closest('.thought-card');
+    const chipRow = card && card.querySelector(`[data-t-chips="${tid}"]`);
+    if (!chipRow) return;
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
         e.preventDefault();
         const label = input.value.trim();
         if (!label) return;
-        CustomFeelings.add(label);
-        const chip = createTagChip(label, tid);
-        wrap.insertBefore(chip, input);
         input.value = '';
-      } else if (e.key === 'Backspace' && input.value === '') {
-        const chips = wrap.querySelectorAll('.tag-chip');
-        if (chips.length) chips[chips.length - 1].remove();
+        const existing = chipRow.querySelector(`[data-feel="${CSS.escape(label)}"]`);
+        if (existing) {
+          existing.classList.add('active');
+          existing.setAttribute('aria-pressed', 'true');
+          return;
+        }
+        CustomFeelings.add(label);
+        const chip = appendManagedChipToRow(chipRow, tid, label);
+        wireManagedFeelChipActions(chip, r);
       }
     });
   });
@@ -617,32 +742,111 @@ export function wireTagInputs(r) {
 
 export function wireStandaloneFeelings(r) {
   document.querySelectorAll('[data-standalone-feel]').forEach(c => {
-    c.addEventListener('click', () => c.classList.toggle('active'));
+    c.addEventListener('click', e => {
+      if (e.target.closest('.chip-managed-action')) return;
+      c.classList.toggle('active');
+    });
   });
   const standaloneInput = document.getElementById('standalone-tag-input');
-  const standaloneWrap  = document.getElementById('standalone-tags');
-  if (standaloneInput && standaloneWrap) {
+  const chipRow         = document.getElementById('standalone-feel-chips');
+  if (standaloneInput && chipRow) {
     standaloneInput.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
         e.preventDefault();
         const label = standaloneInput.value.trim();
         if (!label) return;
-        CustomFeelings.add(label);
-        const chip = createTagChip(label, null);
-        standaloneWrap.insertBefore(chip, standaloneInput);
         standaloneInput.value = '';
-      } else if (e.key === 'Backspace' && standaloneInput.value === '') {
-        const chips = standaloneWrap.querySelectorAll('.tag-chip');
-        if (chips.length) chips[chips.length - 1].remove();
+        const existing = chipRow.querySelector(`[data-standalone-feel="${CSS.escape(label)}"]`);
+        if (existing) {
+          existing.classList.add('active');
+          existing.setAttribute('aria-pressed', 'true');
+          return;
+        }
+        CustomFeelings.add(label);
+        const chip = appendManagedChipToRow(chipRow, 'standalone', label);
+        wireManagedFeelChipActions(chip, r);
       }
     });
   }
-  document.querySelectorAll('#standalone-tags .tag-chip, #standalone-feels-section .tag-chip').forEach(wireTagChipButtons);
+  document.querySelectorAll('#standalone-feel-chips .chip-managed').forEach(chip => wireManagedFeelChipActions(chip, r));
+}
+
+export function wireManagedFeelChipActions(chip, r) {
+  const editBtn   = chip.querySelector('.chip-managed-edit');
+  const removeBtn = chip.querySelector('.chip-managed-remove');
+  if (removeBtn) {
+    removeBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const name = chip.dataset.feel || chip.dataset.standaloneFeel;
+      if (!name) return;
+      collectThoughtsFromDom(r);
+      CustomFeelings.remove(name);
+      r.thoughts.forEach(t => { t.feelings = (t.feelings || []).filter(f => f !== name); });
+      r.standaloneFeelings = (r.standaloneFeelings || []).filter(f => f !== name);
+      document.querySelectorAll(`.chip-managed[data-feel="${CSS.escape(name)}"], .chip-managed[data-standalone-feel="${CSS.escape(name)}"]`).forEach(el => el.remove());
+    });
+  }
+  if (editBtn) {
+    editBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      startManagedRename(chip, r);
+    });
+  }
+}
+
+function startManagedRename(chip, r) {
+  const nameEl  = chip.querySelector('.chip-managed-name');
+  if (!nameEl) return;
+  const oldName = nameEl.textContent;
+  const input   = document.createElement('input');
+  input.className = 'chip-managed-rename';
+  input.value     = oldName;
+  nameEl.replaceWith(input);
+  input.focus(); input.select();
+
+  let done = false;
+  const finish = (apply) => {
+    if (done) return;
+    done = true;
+    const newName = (input.value || '').trim();
+    const span = document.createElement('span');
+    span.className = 'chip-managed-name';
+    if (apply && newName && newName !== oldName) {
+      collectThoughtsFromDom(r);
+      CustomFeelings.rename(oldName, newName);
+      r.thoughts.forEach(t => {
+        const i = (t.feelings || []).indexOf(oldName);
+        if (i !== -1) t.feelings[i] = newName;
+      });
+      const si = (r.standaloneFeelings || []).indexOf(oldName);
+      if (si !== -1) r.standaloneFeelings[si] = newName;
+      document.querySelectorAll(`.chip-managed[data-feel="${CSS.escape(oldName)}"], .chip-managed[data-standalone-feel="${CSS.escape(oldName)}"]`).forEach(el => {
+        if (el.dataset.feel)            el.dataset.feel            = newName;
+        if (el.dataset.standaloneFeel)  el.dataset.standaloneFeel  = newName;
+        const n = el.querySelector('.chip-managed-name');
+        if (n) n.textContent = newName;
+      });
+      span.textContent = newName;
+    } else {
+      span.textContent = oldName;
+    }
+    if (input.parentNode) input.replaceWith(span);
+  };
+  input.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter')  { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('click', e => e.stopPropagation());
 }
 
 export function attachThoughtListHandlers(r) {
   document.querySelectorAll('[data-feel-thought]').forEach(c => {
-    c.addEventListener('click', () => c.classList.toggle('active'));
+    c.addEventListener('click', e => {
+      if (e.target.closest('.chip-managed-action')) return;
+      c.classList.toggle('active');
+    });
   });
   document.querySelectorAll('[data-remove-thought]').forEach(b => {
     b.addEventListener('click', () => {
@@ -653,14 +857,15 @@ export function attachThoughtListHandlers(r) {
       rerenderThoughtsList(r);
     });
   });
-  document.querySelectorAll('#thoughts-list .tag-chip').forEach(wireTagChipButtons);
+  document.querySelectorAll('#thoughts-list .chip-managed').forEach(chip => wireManagedFeelChipActions(chip, r));
   wireTagInputs(r);
 }
 
 export function rerenderThoughtsList(r) {
   const list = document.getElementById('thoughts-list');
   if (!list) return;
-  list.innerHTML = r.thoughts.map((t, i) => thoughtCardHTML(t, i)).join('');
+  const customs = customFeelingsForRound(r);
+  list.innerHTML = r.thoughts.map((t, i) => thoughtCardHTML(t, i, customs)).join('');
   attachThoughtListHandlers(r);
 }
 
@@ -673,24 +878,19 @@ export function collectThoughtsFromDom(r) {
     const tid     = card.dataset.thoughtId;
     const textEl  = card.querySelector(`[data-t-id="${tid}"]`);
     const feelEls = card.querySelectorAll(`[data-feel-thought="${tid}"].active`);
-    const predefined = Array.from(feelEls).map(c => c.dataset.feel);
-    const customChips = card.querySelectorAll(`[data-tag-feel-thought="${tid}"]`);
-    const custom  = Array.from(customChips).map(c => c.dataset.tagFeel).filter(Boolean);
+    const feelings = Array.from(feelEls).map(c => c.dataset.feel).filter(Boolean);
     const rawText = textEl
       ? (textEl.tagName === 'TEXTAREA' ? textEl.value.trim() : sanitizeRichText(textEl.innerHTML.trim()))
       : '';
     next.push({
       id: tid || ('t_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
       text: rawText === '<br>' ? '' : rawText,
-      feelings: [...predefined, ...custom]
+      feelings
     });
   });
   r.thoughts = next;
 
-  const predefined  = Array.from(document.querySelectorAll('[data-standalone-feel].active')).map(c => c.dataset.standaloneFeel);
-  const customChips = document.querySelectorAll('#standalone-tags .tag-chip[data-standalone-tag]');
-  const custom      = Array.from(customChips).map(c => c.dataset.standaloneTag).filter(Boolean);
-  r.standaloneFeelings = [...predefined, ...custom];
+  r.standaloneFeelings = Array.from(document.querySelectorAll('[data-standalone-feel].active')).map(c => c.dataset.standaloneFeel).filter(Boolean);
 }
 
 export function renderRoundDone() {

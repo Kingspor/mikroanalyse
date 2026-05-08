@@ -75,13 +75,13 @@ describe('newAnalysis', () => {
     expect(isNaN(new Date(a.createdAt).getTime())).toBe(false);
   });
 
-  test('situation string fields default to empty string', () => {
+  test('situation default fields have correct types', () => {
     const a = global.newAnalysis();
     expect(a.situation.need).toBe('');
     expect(a.situation.context).toBe('');
     expect(a.situation.contextWhat).toBe('');
-    expect(a.situation.contextWho).toBe('');
-    expect(a.situation.contextWhere).toBe('');
+    expect(a.situation.contextWho).toEqual([]);
+    expect(a.situation.contextWhere).toEqual([]);
   });
 });
 

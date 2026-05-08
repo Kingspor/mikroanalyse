@@ -5,36 +5,97 @@ export const TOMBSTONE_KEY = 'mikroanalysen_tombstones_v1';
 export const SETTINGS_KEY  = 'mikroanalysen_settings_v1';
 export const FEELINGS      = ['Angst', 'Trauer', 'Ärger', 'Ablehnung', 'Scham'];
 
-export const CustomFeelings = {
-  KEY: 'mikro_custom_feelings',
-  get() { try { return JSON.parse(localStorage.getItem(this.KEY) || '[]'); } catch { return []; } },
-  add(f) {
-    if (!f) return;
-    const list = this.get();
-    if (!list.includes(f)) { list.push(f); localStorage.setItem(this.KEY, JSON.stringify(list)); }
-  },
-  remove(f) {
-    localStorage.setItem(this.KEY, JSON.stringify(this.get().filter(x => x !== f)));
-  },
-  rename(oldF, newF) {
-    if (!newF || newF === oldF) return;
-    const list = this.get();
-    const idx = list.indexOf(oldF);
-    if (idx !== -1) { list[idx] = newF; localStorage.setItem(this.KEY, JSON.stringify(list)); }
-    Store.loadAll().forEach(a => {
-      let changed = false;
-      a.rounds.forEach(r => {
-        (r.thoughts || []).forEach(t => {
-          const i = (t.feelings || []).indexOf(oldF);
-          if (i !== -1) { t.feelings[i] = newF; changed = true; }
-        });
-        const si = (r.standaloneFeelings || []).indexOf(oldF);
-        if (si !== -1) { r.standaloneFeelings[si] = newF; changed = true; }
-      });
-      if (changed) Store.upsert(a);
+// Forward-declared; defined below after makeNamedList.
+
+function makeNamedList(KEY, contextRenameAnalyses) {
+  function readRaw() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return { items: {}, tombstones: {} };
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const ts = new Date().toISOString();
+        const items = {};
+        parsed.forEach(name => { if (typeof name === 'string' && name) items[name] = ts; });
+        const migrated = { items, tombstones: {} };
+        localStorage.setItem(KEY, JSON.stringify(migrated));
+        return migrated;
+      }
+      return {
+        items:      parsed && typeof parsed.items === 'object'      ? parsed.items      : {},
+        tombstones: parsed && typeof parsed.tombstones === 'object' ? parsed.tombstones : {}
+      };
+    } catch { return { items: {}, tombstones: {} }; }
+  }
+  function writeRaw(state) { localStorage.setItem(KEY, JSON.stringify(state)); }
+  function aliveNames(state) {
+    return Object.keys(state.items).filter(name => {
+      const itemTs = state.items[name] || '';
+      const tombTs = state.tombstones[name] || '';
+      return itemTs > tombTs;
     });
   }
-};
+  return {
+    KEY,
+    get() { return aliveNames(readRaw()); },
+    getRaw() { return readRaw(); },
+    setRaw(state) { writeRaw(state); },
+    add(name) {
+      if (!name) return;
+      const state = readRaw();
+      state.items[name] = new Date().toISOString();
+      writeRaw(state);
+    },
+    remove(name) {
+      if (!name) return;
+      const state = readRaw();
+      state.tombstones[name] = new Date().toISOString();
+      writeRaw(state);
+    },
+    rename(oldName, newName) {
+      if (!newName || newName === oldName) return;
+      const state = readRaw();
+      const ts = new Date().toISOString();
+      state.tombstones[oldName] = ts;
+      state.items[newName] = ts;
+      writeRaw(state);
+      if (typeof contextRenameAnalyses === 'function') contextRenameAnalyses(oldName, newName);
+    }
+  };
+}
+
+export const CustomFeelings = makeNamedList('mikro_custom_feelings', (oldName, newName) => {
+  Store.loadAll().forEach(a => {
+    let changed = false;
+    a.rounds.forEach(r => {
+      (r.thoughts || []).forEach(t => {
+        const i = (t.feelings || []).indexOf(oldName);
+        if (i !== -1) { t.feelings[i] = newName; changed = true; }
+      });
+      const si = (r.standaloneFeelings || []).indexOf(oldName);
+      if (si !== -1) { r.standaloneFeelings[si] = newName; changed = true; }
+    });
+    if (changed) Store.upsert(a);
+  });
+});
+
+export const People = makeNamedList('mikro_people', (oldName, newName) => {
+  Store.loadAll().forEach(a => {
+    const arr = a.situation && Array.isArray(a.situation.contextWho) ? a.situation.contextWho : null;
+    if (!arr) return;
+    const i = arr.indexOf(oldName);
+    if (i !== -1) { arr[i] = newName; Store.upsert(a); }
+  });
+});
+
+export const Places = makeNamedList('mikro_places', (oldName, newName) => {
+  Store.loadAll().forEach(a => {
+    const arr = a.situation && Array.isArray(a.situation.contextWhere) ? a.situation.contextWhere : null;
+    if (!arr) return;
+    const i = arr.indexOf(oldName);
+    if (i !== -1) { arr[i] = newName; Store.upsert(a); }
+  });
+});
 
 export const Store = {
   _cache: null,

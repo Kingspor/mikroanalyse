@@ -1,4 +1,5 @@
 import { escapeHtml, escapeAttr } from './utils.js';
+import { getActiveRichFormats } from './richtext.js';
 
 export function headerHTML(title, step, withBack) {
   return `
@@ -90,7 +91,8 @@ export function updateToolbarState() {
   if (!editor) return;
   const toolbar = editor.closest('.rich-editor') && editor.closest('.rich-editor').querySelector('.rich-toolbar');
   if (!toolbar) return;
+  const formats = getActiveRichFormats(editor);
   toolbar.querySelectorAll('[data-cmd]').forEach(btn => {
-    try { btn.classList.toggle('active', document.queryCommandState(btn.dataset.cmd)); } catch (e) {}
+    btn.classList.toggle('active', formats.has(btn.dataset.cmd));
   });
 }

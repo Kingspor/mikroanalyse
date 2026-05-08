@@ -211,14 +211,16 @@ describe('renderSituationStep - step 3 (W-Fragen)', () => {
     expect(document.getElementById('f-what')).not.toBeNull();
   });
 
-  test('renders contextWho input', () => {
+  test('renders contextWho name-list editor', () => {
     global.renderSituationStep();
-    expect(document.getElementById('f-who')).not.toBeNull();
+    expect(document.querySelector('[data-namelist-scope="who"]')).not.toBeNull();
+    expect(document.querySelector('[data-namelist-input="who"]')).not.toBeNull();
   });
 
-  test('renders contextWhere input', () => {
+  test('renders contextWhere name-list editor', () => {
     global.renderSituationStep();
-    expect(document.getElementById('f-where')).not.toBeNull();
+    expect(document.querySelector('[data-namelist-scope="where"]')).not.toBeNull();
+    expect(document.querySelector('[data-namelist-input="where"]')).not.toBeNull();
   });
 
   test('next button advances to STARTER_STEP (4)', () => {
@@ -311,11 +313,10 @@ describe('renderRoundsHub', () => {
     global.State.roundIdx = -1;
   });
 
-  test('renders choice cards for me and ip starter', () => {
+  test('renders single add-round card', () => {
     global.renderRoundsHub();
     const app = document.getElementById('app');
-    expect(app.innerHTML).toContain('data-starter="me"');
-    expect(app.innerHTML).toContain('data-starter="ip"');
+    expect(app.querySelector('[data-add-round]')).not.toBeNull();
   });
 
   test('shows "Erste Runde anlegen" when no rounds exist', () => {
@@ -331,18 +332,19 @@ describe('renderRoundsHub', () => {
     expect(app.innerHTML).toContain('Eine weitere Runde?');
   });
 
-  test('clicking ip starter adds a round and enters roundStep', () => {
+  test('clicking add-round uses defaultStarter when no rounds yet', () => {
     global.renderRoundsHub();
-    document.querySelector('[data-starter="ip"]').click();
+    document.querySelector('[data-add-round]').click();
     expect(global.State.current.rounds).toHaveLength(1);
     expect(global.State.current.rounds[0].starter).toBe('ip');
     expect(global.State.roundIdx).toBe(0);
   });
 
-  test('clicking me starter adds a me-round', () => {
+  test('clicking add-round inherits starter from first round', () => {
+    global.State.current.rounds.push(global.newRound('me'));
     global.renderRoundsHub();
-    document.querySelector('[data-starter="me"]').click();
-    expect(global.State.current.rounds[0].starter).toBe('me');
+    document.querySelector('[data-add-round]').click();
+    expect(global.State.current.rounds[1].starter).toBe('me');
   });
 
   test('finish button saves and goes to detail view', () => {

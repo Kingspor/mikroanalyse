@@ -1,7 +1,31 @@
-import { Store } from './store.js';
+import { Store, CustomFeelings, People, Places } from './store.js';
 import { Crypto } from './crypto.js';
 import { OneDrive }   from './providers/onedrive.js';
 import { GoogleDrive } from './providers/googledrive.js';
+
+const NAMED_LISTS = { feelings: () => CustomFeelings, people: () => People, places: () => Places };
+
+function mergeNamedList(local, remote) {
+  const localItems  = (local  && local.items)       || {};
+  const localTombs  = (local  && local.tombstones)  || {};
+  const remoteItems = (remote && remote.items)      || {};
+  const remoteTombs = (remote && remote.tombstones) || {};
+  const items = {};
+  const tombs = {};
+  const allItems = new Set([...Object.keys(localItems), ...Object.keys(remoteItems)]);
+  allItems.forEach(name => {
+    const a = localItems[name]  || '';
+    const b = remoteItems[name] || '';
+    items[name] = a > b ? a : b;
+  });
+  const allTombs = new Set([...Object.keys(localTombs), ...Object.keys(remoteTombs)]);
+  allTombs.forEach(name => {
+    const a = localTombs[name]  || '';
+    const b = remoteTombs[name] || '';
+    tombs[name] = a > b ? a : b;
+  });
+  return { items, tombstones: tombs };
+}
 
 const PROVIDERS = { onedrive: OneDrive, googledrive: GoogleDrive };
 
@@ -99,7 +123,11 @@ export const Sync = {
     const merged = Object.values(byId).sort((a, b) =>
       (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '')
     );
-    return { list: merged, tombstones: tombs };
+    const lists = {};
+    Object.keys(NAMED_LISTS).forEach(key => {
+      lists[key] = mergeNamedList((local.lists || {})[key], (remote.lists || {})[key]);
+    });
+    return { list: merged, tombstones: tombs, lists };
   },
 
   async pull() {
@@ -116,16 +144,23 @@ export const Sync = {
         throw err;
       }
     }
-    const local  = { list: Store.loadAll(), tombstones: Store.loadTombstones() };
+    const localLists = {};
+    Object.keys(NAMED_LISTS).forEach(key => { localLists[key] = NAMED_LISTS[key]().getRaw(); });
+    const local  = { list: Store.loadAll(), tombstones: Store.loadTombstones(), lists: localLists };
     const merged = this.mergeBundles(local, remote);
     Store.saveAll(merged.list);
     Store.saveTombstones(merged.tombstones);
+    Object.keys(NAMED_LISTS).forEach(key => {
+      if (merged.lists && merged.lists[key]) NAMED_LISTS[key]().setRaw(merged.lists[key]);
+    });
     return merged;
   },
 
   async push() {
     if (!this._passphrase) throw new Error('Keine Passphrase gesetzt');
-    const bundle = { list: Store.loadAll(), tombstones: Store.loadTombstones() };
+    const lists = {};
+    Object.keys(NAMED_LISTS).forEach(key => { lists[key] = NAMED_LISTS[key]().getRaw(); });
+    const bundle = { list: Store.loadAll(), tombstones: Store.loadTombstones(), lists };
     const enc    = await Crypto.encrypt(JSON.stringify(bundle), this._passphrase);
     await this.putRemote(enc);
     const s = Store.loadSettings();

@@ -82,6 +82,6 @@ describe('CustomFeelings.add', () => {
     global.CustomFeelings.add('Neugier');
     // get() re-reads from localStorage
     const raw = global.localStorage.getItem(KEY);
-    expect(JSON.parse(raw)).toContain('Neugier');
+    expect(Object.keys(JSON.parse(raw).items || {})).toContain('Neugier');
   });
 });

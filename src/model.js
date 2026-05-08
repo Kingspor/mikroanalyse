@@ -16,8 +16,8 @@ export function newAnalysis() {
       need: '',
       context: '',
       contextWhat: '',
-      contextWho: '',
-      contextWhere: ''
+      contextWho: [],
+      contextWhere: []
     },
     rounds: []
   };
@@ -48,6 +48,12 @@ export function newThought() {
     text: '',
     feelings: []
   };
+}
+
+export function asNameList(value) {
+  if (Array.isArray(value)) return value.filter(x => typeof x === 'string' && x.trim()).map(x => x.trim());
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  return [];
 }
 
 export function migrateRound(r) {

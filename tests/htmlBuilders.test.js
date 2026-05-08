@@ -245,12 +245,12 @@ describe('thoughtCardHTML', () => {
     expect(html).toContain('tag-input-field');
   });
 
-  test('shows existing custom feelings as tag chips', () => {
+  test('shows existing custom feelings as managed chips', () => {
     const t = global.newThought();
     t.feelings = ['Schuld'];
     const html = global.thoughtCardHTML(t, 0);
     expect(html).toContain('Schuld');
-    expect(html).toContain('tag-chip');
+    expect(html).toContain('chip-managed');
   });
 
   test('renders second thought with index 1 (Gedanke 2)', () => {

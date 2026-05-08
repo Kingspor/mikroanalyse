@@ -2,8 +2,9 @@ import { State } from '../state.js';
 import { Store } from '../store.js';
 import { Sync } from '../sync.js';
 import { escapeHtml, escapeAttr, formatDateTime, relativeTime } from '../utils.js';
+import { richHtmlToText } from '../richtext.js';
 import { startNewAnalysis, openDetail } from '../navigation.js';
-import { openSettingsSheet, triggerManualSync, openBulkDeleteSheet, openBulkExportSheet } from './sheets.js';
+import { openSettingsSheet, triggerManualSync, openBulkDeleteSheet, openBulkExportSheet, openStatsSheet } from './sheets.js';
 
 export function renderHome() {
   const list = Store.loadAll();
@@ -28,7 +29,10 @@ export function renderHome() {
     <div class="home-hero fade-in">
       <div class="home-hero-top">
         <div class="home-eyebrow">Mikroanalyse</div>
-        <button class="settings-btn" id="settings-btn" aria-label="Einstellungen">⋯</button>
+        <div class="home-hero-actions">
+          <button class="settings-btn" id="stats-btn" aria-label="Statistik">📊</button>
+          <button class="settings-btn" id="settings-btn" aria-label="Einstellungen">⋯</button>
+        </div>
       </div>
       <h1 class="home-title">Eine ruhige <em>Reflexion</em><br>einer Begegnung.</h1>
       <p class="home-subtitle">Schritt für Schritt verstehen, was war.</p>
@@ -105,6 +109,7 @@ export function renderHome() {
     });
   }
   document.getElementById('settings-btn').addEventListener('click', openSettingsSheet);
+  document.getElementById('stats-btn').addEventListener('click', openStatsSheet);
   document.getElementById('sync-pill').addEventListener('click', () => {
     if (!Sync.isConnected()) openSettingsSheet();
     else triggerManualSync();
@@ -114,7 +119,8 @@ export function renderHome() {
 export function renderAnalysisCard(a, selMode, isSelected) {
   const dt        = formatDateTime(a.situation.datetime);
   const title     = a.situation.title ? escapeHtml(a.situation.title) : '';
-  const snippet   = (a.situation.context || a.situation.need || 'Ohne Beschreibung').slice(0, 140);
+  const rawSnippet = richHtmlToText(a.situation.context || a.situation.need || '').replace(/\s+/g, ' ').trim();
+  const snippet    = (rawSnippet || 'Ohne Beschreibung').slice(0, 140);
   const meta      = a._draft
     ? '<span class="draft-badge">In Bearbeitung</span>'
     : `${a.rounds.length} ${a.rounds.length === 1 ? 'Runde' : 'Runden'}`;

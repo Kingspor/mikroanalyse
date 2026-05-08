@@ -5,6 +5,7 @@ import { render } from './renderer.js';
 import { updateToolbarState, closeSheet, showToast } from './ui.js';
 import { initNavigation } from './navigation.js';
 import { escapeHtml } from './utils.js';
+import { applyRichCommand, handleBeforeInput } from './richtext.js';
 
 // ─── Auto-Sync (injected into Store._onWrite) ────────────────────
 
@@ -42,9 +43,11 @@ document.addEventListener('mousedown', e => {
   const btn = e.target.closest('.rich-btn[data-cmd]');
   if (!btn) return;
   e.preventDefault();
-  document.execCommand(btn.dataset.cmd, false, null);
+  applyRichCommand(btn.dataset.cmd);
   updateToolbarState();
 });
+
+document.addEventListener('beforeinput', handleBeforeInput, true);
 
 document.addEventListener('selectionchange', updateToolbarState);
 

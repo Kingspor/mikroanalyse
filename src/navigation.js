@@ -3,7 +3,7 @@ import { Store } from './store.js';
 import { newAnalysis, migrateRound } from './model.js';
 import { getRichValue } from './richtext.js';
 import { showToast } from './ui.js';
-import { getRoundSequence, saveRoundField, HUB_STEP } from './views/wizard.js';
+import { getRoundSequence, saveRoundField, readNameList, HUB_STEP } from './views/wizard.js';
 import { render } from './renderer.js';
 
 export function startNewAnalysis() {
@@ -75,11 +75,9 @@ export function saveCurrentStep() {
     if (sitIdx === 1 && elMood) s.mood = Math.max(0, Math.min(100, parseInt(elMood.value, 10) || 50));
     if (sitIdx === 2) s.need = getRichValue('f-need');
     if (sitIdx === 3) {
-      const elWho   = document.getElementById('f-who');
-      const elWhere = document.getElementById('f-where');
       s.contextWhat  = getRichValue('f-what');
-      if (elWho)   s.contextWho   = elWho.value.trim();
-      if (elWhere) s.contextWhere = elWhere.value.trim();
+      if (document.querySelector('[data-namelist-scope="who"]'))   s.contextWho   = readNameList('who');
+      if (document.querySelector('[data-namelist-scope="where"]')) s.contextWhere = readNameList('where');
     }
   }
 }
